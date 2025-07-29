@@ -1,0 +1,74 @@
+{
+  "name": "attendance-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "start": "electron .",
+    "build": "vite build && electron-builder",
+    "build:win": "electron-builder --win",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@electron/remote": "^2.1.3",
+    "adm-zip": "^0.5.16",
+    "electron-updater": "^6.6.2",
+    "node-cron": "^4.0.0",
+    "papaparse": "^5.5.3",
+    "pdfkit": "^0.14.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.20.0"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
+    "@types/papaparse": "^5.3.16",
+    "@types/pdfkit": "^0.17.2",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@vitejs/plugin-react": "^4.2.0",
+    "autoprefixer": "^10.4.21",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.3.0",
+    "vite": "^5.0.0",
+    "vite-plugin-electron": "^0.15.0",
+    "vite-plugin-electron-renderer": "^0.14.5",
+    "vite-tsconfig-paths": "^4.2.1"
+  },
+  "build": {
+    "appId": "com.yourcompany.attendance-tracker",
+    "asar": true,
+    "files": [
+      "dist",
+      "dist-electron/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.education",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "publisherName": "Your Company, Inc."
+    }
+  }
+}
