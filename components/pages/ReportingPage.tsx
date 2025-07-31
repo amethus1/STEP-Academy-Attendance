@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAppData } from '../../hooks/useAppData';
+import { useSettings } from '../../hooks/useSettings';
 import { Student, StudentStatus, Presence } from '../../types';
 import { toISODateString } from '../../services/dateUtils';
 import { exportToCsv } from '../../services/csvService';
@@ -88,12 +89,21 @@ const AttendanceTrendChart: React.FC<{data: {date: string; present: number; abse
 
 export const ReportingPage: React.FC = () => {
     const { students, attendance, holidays, loading } = useAppData();
+    const { settings } = useSettings();
+
+    const studentsInYear = useMemo(
+        () => students.filter(s =>
+            s.registrationDate >= settings.schoolYearStartDate &&
+            s.registrationDate <= settings.schoolYearEndDate
+        ),
+        [students, settings.schoolYearStartDate, settings.schoolYearEndDate]
+    );
     const [activeTab, setActiveTab] = useState<'dashboard' | 'atRisk'>('dashboard');
 
     const [atRiskConfig, setAtRiskConfig] = useState({ threshold: 5, days: 30 });
 
     const analyticsData = useMemo(() => {
-        const activeStudents = students.filter(s => s.status === StudentStatus.Active);
+        const activeStudents = studentsInYear.filter(s => s.status === StudentStatus.Active);
         if (loading || activeStudents.length === 0) {
             return {
                 overallAttendance: 0,
@@ -163,7 +173,7 @@ export const ReportingPage: React.FC = () => {
             chartData,
             atRiskStudents
         };
-    }, [students, attendance, holidays, loading, atRiskConfig]);
+    }, [studentsInYear, attendance, holidays, loading, atRiskConfig]);
     
     const handleExportAtRisk = () => {
         const dataToExport = analyticsData.atRiskStudents.map(({ student, recentAbsences }) => ({
@@ -187,7 +197,7 @@ export const ReportingPage: React.FC = () => {
     
     if (loading) return <div>Loading reports...</div>
     
-    const activeStudentsCount = students.filter(s => s.status === StudentStatus.Active).length;
+    const activeStudentsCount = studentsInYear.filter(s => s.status === StudentStatus.Active).length;
 
     return (
         <div className="space-y-6">

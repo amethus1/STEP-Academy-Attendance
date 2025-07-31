@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAppData } from '../../hooks/useAppData';
+import { useSettings } from '../../hooks/useSettings';
 import { Student, StudentStatus, Presence } from '../../types';
 import { toISODateString, getDaysAttended, calculateProjectedReleaseDate, formatDateForDisplay } from '../../services/dateUtils';
 import { CheckCircleIcon, XCircleIcon } from '../icons/Icons';
@@ -48,6 +49,15 @@ const dailyViewColumns: { id: SortKey; label: string; }[] = [
 
 export const DailyView: React.FC = () => {
   const { students, attendance, holidays, markAttendance, loading } = useAppData();
+  const { settings } = useSettings();
+
+  const studentsInYear = useMemo(
+    () => students.filter(s =>
+      s.registrationDate >= settings.schoolYearStartDate &&
+      s.registrationDate <= settings.schoolYearEndDate
+    ),
+    [students, settings.schoolYearStartDate, settings.schoolYearEndDate]
+  );
   const [selectedDate, setSelectedDate] = useState(toISODateString(new Date()));
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'lastName', direction: 'asc' });
 
@@ -57,7 +67,10 @@ export const DailyView: React.FC = () => {
   const [gradeFilter, setGradeFilter] = useState('All');
   const [spedFilter, setSpedFilter] = useState('All');
   
-  const gradeLevels = useMemo(() => ['All', ...Array.from(new Set(students.map(s => s.gradeLevel).filter(Boolean)))], [students]);
+  const gradeLevels = useMemo(
+    () => ['All', ...Array.from(new Set(studentsInYear.map(s => s.gradeLevel).filter(Boolean)))],
+    [studentsInYear]
+  );
   const spedOptions = ['All', 'None', 'SPED', '504'];
 
   const changeDay = (amount: number) => {
@@ -70,13 +83,13 @@ export const DailyView: React.FC = () => {
   
   const extendedStudentData = useMemo(() => {
       const todayStr = toISODateString(new Date());
-      return students.map(student => {
+      return studentsInYear.map(student => {
           const daysAttended = getDaysAttended(student.id, attendance);
           const daysRemaining = student.daysAssigned - daysAttended - (student.creditDays || 0);
           const projectedReleaseDate = calculateProjectedReleaseDate(student, attendance, holidays, todayStr);
           return {...student, daysRemaining: daysRemaining > 0 ? daysRemaining : 0, projectedReleaseDate }
       });
-  }, [students, attendance, holidays]);
+  }, [studentsInYear, attendance, holidays]);
 
   const sortedAndFilteredStudents = useMemo(() => {
     let filteredStudents = extendedStudentData.filter(s => {

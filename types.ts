@@ -68,4 +68,5 @@ export interface AppSettings {
   rosterVisibleColumns: string[];
   rosterColumnOrder: string[];
   schoolYearStartDate: string; // ISO Date
+  schoolYearEndDate: string; // ISO Date
 }

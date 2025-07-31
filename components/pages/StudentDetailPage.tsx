@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAppData } from '../../hooks/useAppData';
+import { useSettings } from '../../hooks/useSettings';
 import { Student, StudentStatus, Presence } from '../../types';
 import { calculateProjectedReleaseDate, getDaysAttended, toISODateString, formatDateForDisplay } from '../../services/dateUtils';
 import { StudentFormModal } from '../common/StudentFormModal';
@@ -40,10 +41,18 @@ const ContactInfoCard: React.FC<{student: Student}> = ({ student }) => (
 export const StudentDetailPage: React.FC = () => {
   const { studentId } = useParams<{ studentId: string }>();
   const { students, attendance, holidays, customFieldDefinitions, updateStudent, loading } = useAppData();
+  const { settings } = useSettings();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [projectionMethod, setProjectionMethod] = useState<'entryDate' | 'today'>('today');
 
-  const student = useMemo(() => students.find(s => s.id === studentId), [students, studentId]);
+  const student = useMemo(
+    () => students.find(s =>
+      s.id === studentId &&
+      s.registrationDate >= settings.schoolYearStartDate &&
+      s.registrationDate <= settings.schoolYearEndDate
+    ),
+    [students, studentId, settings.schoolYearStartDate, settings.schoolYearEndDate]
+  );
 
   if (loading) return <div className="text-center p-8">Loading student data...</div>;
   if (!student) return <div className="text-center p-8 text-rose-500 font-bold">Student not found.</div>;
