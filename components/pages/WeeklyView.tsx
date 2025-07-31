@@ -55,7 +55,7 @@ export const WeeklyView: React.FC = () => {
     [students, settings.schoolYearStartDate, settings.schoolYearEndDate]
   );
 
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState<string>(toISODateString(new Date()));
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'lastName', direction: 'asc' });
 
   // Filters
@@ -70,7 +70,7 @@ export const WeeklyView: React.FC = () => {
   const spedOptions = ['All', 'None', 'SPED', '504'];
 
 
-  const startOfWeek = useMemo(() => getStartOfWeek(currentDate), [currentDate]);
+  const startOfWeek = useMemo(() => getStartOfWeek(new Date(currentDate + 'T12:00:00Z')), [currentDate]);
   const displayDays = useMemo(() => getWeekDays(startOfWeek), [startOfWeek]);
   
   const holidaySet = useMemo(() => new Set(holidays.map(h => h.date)), [holidays]);
@@ -78,15 +78,17 @@ export const WeeklyView: React.FC = () => {
 
   const changeWeek = (offset: number) => {
     setCurrentDate(prev => {
-        const newDate = new Date(prev);
+        const newDate = new Date(prev + 'T12:00:00Z');
         newDate.setDate(newDate.getDate() + (offset * 7));
-        return newDate;
+        return toISODateString(newDate);
     });
   };
 
   const handleDateJump = (e: React.ChangeEvent<HTMLInputElement>) => {
       const dateVal = e.target.value;
-      setCurrentDate(new Date(dateVal + 'T12:00:00Z'));
+      if (dateVal) {
+        setCurrentDate(dateVal);
+      }
   }
 
   const extendedStudentData = useMemo(() => {
@@ -161,7 +163,7 @@ export const WeeklyView: React.FC = () => {
       <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow-sm flex justify-between items-center flex-wrap gap-4">
         <div className="flex items-center gap-2 flex-wrap">
             <button onClick={() => changeWeek(-1)} className="px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-50 dark:hover:bg-slate-600">Prev Week</button>
-            <input type="date" value={toISODateString(currentDate)} onChange={handleDateJump} className="p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white" />
+            <input type="date" value={currentDate} onChange={handleDateJump} className="p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white" />
             <button onClick={() => changeWeek(1)} className="px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-50 dark:hover:bg-slate-600">Next Week</button>
         </div>
       </div>
