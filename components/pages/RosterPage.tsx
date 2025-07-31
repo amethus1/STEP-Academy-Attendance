@@ -121,6 +121,14 @@ const initialFilters = {
 export const RosterPage: React.FC = () => {
   const { students, attendance, holidays, customFieldDefinitions, addStudent, updateStudent, loading } = useAppData();
   const { settings, saveSettings } = useSettings();
+
+  const studentsInYear = useMemo(
+    () => students.filter(s =>
+      s.registrationDate >= settings.schoolYearStartDate &&
+      s.registrationDate <= settings.schoolYearEndDate
+    ),
+    [students, settings.schoolYearStartDate, settings.schoolYearEndDate]
+  );
   
   const { rosterColumnOrder } = settings;
   const rosterVisibleColumns = useMemo(() => (
@@ -137,8 +145,14 @@ export const RosterPage: React.FC = () => {
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   
-  const campuses = useMemo(() => ['All', ...Array.from(new Set(students.map(s => s.campus).filter(Boolean)))], [students]);
-  const gradeLevels = useMemo(() => ['All', ...Array.from(new Set(students.map(s => s.gradeLevel).filter(Boolean)))], [students]);
+  const campuses = useMemo(
+    () => ['All', ...Array.from(new Set(studentsInYear.map(s => s.campus).filter(Boolean)))],
+    [studentsInYear]
+  );
+  const gradeLevels = useMemo(
+    () => ['All', ...Array.from(new Set(studentsInYear.map(s => s.gradeLevel).filter(Boolean)))],
+    [studentsInYear]
+  );
   const spedOptions = ['All', 'None', 'SPED', '504'];
   const statusOptions = ['All', ...Object.values(StudentStatus)];
 
@@ -174,7 +188,7 @@ export const RosterPage: React.FC = () => {
   }, [customFieldDefinitions, rosterColumnOrder, saveSettings]);
 
   const studentData = useMemo(() => {
-    return students.map(student => {
+    return studentsInYear.map(student => {
       const daysAttended = getDaysAttended(student.id, attendance);
       const creditDays = student.creditDays || 0;
       const daysRemaining = Math.max(0, student.daysAssigned - daysAttended - creditDays);
@@ -182,7 +196,7 @@ export const RosterPage: React.FC = () => {
       const projectedReleaseDate = calculateProjectedReleaseDate(student, attendance, holidays, projectionStartDate);
       return { ...student, daysAttended, daysRemaining, projectedReleaseDate };
     });
-  }, [students, attendance, holidays, projectionMethod]);
+  }, [studentsInYear, attendance, holidays, projectionMethod]);
 
   const sortedAndFilteredStudents = useMemo(() => {
     let filtered = studentData.filter(s => {

@@ -91,7 +91,7 @@ export const SettingsPage: React.FC = () => {
             </div>
         </SettingsCard>
 
-         <SettingsCard title="Calendar & School Year" description="Define your school year and calendar display preferences.">
+        <SettingsCard title="Calendar & School Year" description="Define your school year and calendar display preferences.">
             <div>
                 <label htmlFor="school-year-start" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">School Year Start Date</label>
                 <input
@@ -99,6 +99,16 @@ export const SettingsPage: React.FC = () => {
                     type="date"
                     value={settings.schoolYearStartDate}
                     onChange={e => saveSettings({ schoolYearStartDate: e.target.value })}
+                    className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white"
+                />
+            </div>
+            <div>
+                <label htmlFor="school-year-end" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">School Year End Date</label>
+                <input
+                    id="school-year-end"
+                    type="date"
+                    value={settings.schoolYearEndDate}
+                    onChange={e => saveSettings({ schoolYearEndDate: e.target.value })}
                     className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white"
                 />
             </div>

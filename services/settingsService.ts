@@ -20,6 +20,7 @@ export const defaultSettings: AppSettings = {
   rosterVisibleColumns: DEFAULT_COLUMN_ORDER,
   rosterColumnOrder: DEFAULT_COLUMN_ORDER,
   schoolYearStartDate: `${new Date().getFullYear()}-08-01`,
+  schoolYearEndDate: `${new Date().getFullYear() + 1}-07-31`,
 };
 
 export const getSettings = (): AppSettings => {
