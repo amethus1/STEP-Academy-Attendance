@@ -27,6 +27,8 @@ There is no complex installation or build process required.
 1.  Clone this repository or download the source files.
 2.  Open the `index.html` file in a modern web browser like Chrome, Firefox, or Edge.
 
+Tailwind CSS is loaded directly from the CDN, so no additional stylesheet or build step is required.
+
 That's it! The application is ready to use.
 
 ## Pages Overview
@@ -103,6 +105,6 @@ Customize your experience and find information about the app.
 *   **React:** For building the user interface.
 *   **TypeScript:** For type safety and better developer experience.
 *   **React Router:** For client-side routing.
-*   **Tailwind CSS:** For styling the application.
+*   **Tailwind CSS (via CDN):** Provides the application's styling without requiring a build step.
 *   **Chart.js:** For rendering analytics charts.
 *   **ES Modules:** The app uses native browser ES modules, requiring no build step.
