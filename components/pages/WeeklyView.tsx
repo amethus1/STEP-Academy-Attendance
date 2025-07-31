@@ -57,6 +57,7 @@ export const WeeklyView: React.FC = () => {
 
   const [currentDate, setCurrentDate] = useState<string>(toISODateString(new Date()));
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'lastName', direction: 'asc' });
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<StudentStatus | 'All'>(StudentStatus.Active);
@@ -106,7 +107,9 @@ export const WeeklyView: React.FC = () => {
         const statusMatch = statusFilter === 'All' || s.status === statusFilter;
         const gradeMatch = gradeFilter === 'All' || s.gradeLevel === gradeFilter;
         const spedMatch = spedFilter === 'All' || s.sped504 === spedFilter;
-        return statusMatch && gradeMatch && spedMatch;
+        const searchMatch = `${s.firstName} ${s.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            s.id.toLowerCase().includes(searchTerm.toLowerCase());
+        return statusMatch && gradeMatch && spedMatch && searchMatch;
     });
     
     return [...filtered].sort((a, b) => {
@@ -116,7 +119,7 @@ export const WeeklyView: React.FC = () => {
       if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [extendedStudentData, statusFilter, gradeFilter, spedFilter, sortConfig]);
+  }, [extendedStudentData, statusFilter, gradeFilter, spedFilter, sortConfig, searchTerm]);
 
   const handleMarkAttendance = (studentId: string, date: string, currentPresence: Presence | undefined, targetPresence: Presence) => {
     const newPresence = currentPresence === targetPresence ? null : targetPresence;
@@ -169,6 +172,13 @@ export const WeeklyView: React.FC = () => {
       </div>
 
        <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow-sm flex items-center gap-4 flex-wrap">
+            <input
+                type="text"
+                placeholder="Search by name or ID..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="w-full md:w-1/3 p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white"
+            />
             <div className="flex items-center gap-2">
                 <label className="text-sm font-medium">Status:</label>
                 <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white">
