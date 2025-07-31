@@ -118,7 +118,7 @@ export const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({ attendan
     return (
         <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow-sm">
             <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">Attendance Calendar</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 print:grid-cols-3 gap-x-6 gap-y-8">
                 {months.map(({ name, days, month }) => (
                     <div key={name}>
                         <h4 className="text-base font-semibold text-center text-slate-700 dark:text-slate-200 mb-2">{name}</h4>
