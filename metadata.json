@@ -1,0 +1,8 @@
+{
+  "name": "S.T.E.P. Academy",
+  "description": "A comprehensive tool for tracking student attendance, managing rosters, and calculating program completion dates. Features include weekly and daily views, holiday management, and data import/export capabilities.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "prompt": ""
+}
