@@ -36,6 +36,8 @@
         /* Make the printable content and its children visible */
         .printable-content, .printable-content * {
           visibility: visible;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
         }
         /* Position the printable content to take up the whole page */
         .printable-content {
