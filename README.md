@@ -25,11 +25,26 @@ This tool was built to provide a modern, responsive, and user-friendly interface
 There is no complex installation or build process required.
 
 1.  Clone this repository or download the source files.
-2.  Open the `index.html` file in a modern web browser like Chrome, Firefox, or Edge.
+2.  Open the `index.html` file in a modern web browser like Chrome, Firefox, or Edge.  
+    *Tailwind CSS and Chart.js are loaded from a CDN, so the browser must have network access when opening this file.*
 
 Tailwind CSS is loaded directly from the CDN, so no additional stylesheet or build step is required.
 
 That's it! The application is ready to use.
+
+### Development with Node
+
+If you want to run a local dev server or build the Electron desktop version, install the dependencies first:
+
+```bash
+npm install
+```
+
+Then use the following commands:
+
+- `npm run dev` – start the Vite development server for web development.
+- `npm run electron:dev` – build the project and run it inside Electron.
+- `npm run electron:dist` – generate a distributable executable (use `npm run electron:pack` for an unpacked build).
 
 ## Pages Overview
 
