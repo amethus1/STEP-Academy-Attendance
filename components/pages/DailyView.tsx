@@ -61,6 +61,8 @@ export const DailyView: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState(toISODateString(new Date()));
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'lastName', direction: 'asc' });
 
+  const [searchTerm, setSearchTerm] = useState('');
+
   // Filters
   const [statusFilter, setStatusFilter] = useState<StudentStatus | 'All'>(StudentStatus.Active);
   const [attendanceFilter, setAttendanceFilter] = useState<AttendanceFilterType>('All');
@@ -98,8 +100,10 @@ export const DailyView: React.FC = () => {
         const statusMatch = statusFilter === 'All' || s.status === statusFilter;
         const gradeMatch = gradeFilter === 'All' || s.gradeLevel === gradeFilter;
         const spedMatch = spedFilter === 'All' || s.sped504 === spedFilter;
+        const searchMatch = `${s.firstName} ${s.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            s.id.toLowerCase().includes(searchTerm.toLowerCase());
 
-        if(!eligibleOnDate || !statusMatch || !gradeMatch || !spedMatch) return false;
+        if(!eligibleOnDate || !statusMatch || !gradeMatch || !spedMatch || !searchMatch) return false;
 
         // Attendance filter
         const record = attendance.find(a => a.studentId === s.id && a.date === selectedDate);
@@ -125,7 +129,7 @@ export const DailyView: React.FC = () => {
       return 0;
     });
 
-  }, [extendedStudentData, attendance, statusFilter, attendanceFilter, gradeFilter, spedFilter, selectedDate, sortConfig]);
+  }, [extendedStudentData, attendance, statusFilter, attendanceFilter, gradeFilter, spedFilter, selectedDate, sortConfig, searchTerm]);
 
   const handleMarkAttendance = (studentId: string, currentPresence: Presence | undefined, targetPresence: Presence) => {
     const newPresence = currentPresence === targetPresence ? null : targetPresence;
@@ -183,6 +187,13 @@ export const DailyView: React.FC = () => {
         </div>
       </div>
       <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow-sm flex items-center gap-4 flex-wrap">
+            <input
+                type="text"
+                placeholder="Search by name or ID..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="w-full md:w-1/3 p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white"
+            />
             <div className="flex items-center gap-2">
                 <label className="text-sm font-medium">Status:</label>
                 <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white">
