@@ -22,15 +22,14 @@ This tool was built to provide a modern, responsive, and user-friendly interface
 
 ## Getting Started
 
-There is no complex installation or build process required.
+Getting up and running is straightforward:
 
-1.  Clone this repository or download the source files.
-2.  Open the `index.html` file in a modern web browser like Chrome, Firefox, or Edge.  
-    *Tailwind CSS and Chart.js are loaded from a CDN, so the browser must have network access when opening this file.*
+1. Clone this repository or download the source files.
+2. Install the dependencies with `npm install`.
+3. Build the project using `npm run build`.
+4. Open `dist/index.html` in a modern web browser (or run `npm run preview` to serve it locally).
 
-Tailwind CSS is loaded directly from the CDN, so no additional stylesheet or build step is required.
-
-That's it! The application is ready to use.
+Tailwind CSS and Chart.js are loaded from a CDN, so your browser will need network access the first time you open the app.
 
 ### Development with Node
 
