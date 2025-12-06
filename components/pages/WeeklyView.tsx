@@ -1,0 +1,318 @@
+import React, { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import { useStudents, useCreateStudent } from '../../hooks/useStudents';
+import { useAttendanceRange, useSaveAttendance, useDeleteAttendance, useHolidays } from '../../hooks/useAttendance';
+import { useSchoolYears } from '../../hooks/useSchoolYears';
+import { useSettings } from '../../hooks/useSettings';
+import { Presence, Student, StudentStatus } from '../../types';
+import { toISODateString, getDaysAttended, formatDateForDisplay, getStartOfWeek, getWeekDays, calculateReleaseDateFromRemaining, getSchoolYearFromDate } from '../../services/dateUtils';
+import { StatusBadge } from '../common/StatusBadge';
+import { AttendanceButton } from '../common/AttendanceButton';
+import { PageLoadingSkeleton } from '../common/SkeletonLoader';
+
+type WeeklyStudent = Student & { daysRemaining: number; projectedReleaseDate: string; };
+type SortKey = keyof WeeklyStudent | string;
+
+const fixedColumns: { id: SortKey; label: string; isSticky?: boolean; widthClass?: string }[] = [
+  { id: 'lastName', label: 'Last Name', isSticky: true, widthClass: 'w-32' },
+  { id: 'firstName', label: 'First Name', isSticky: true, widthClass: 'w-32' },
+  { id: 'studentNumber', label: 'ID', widthClass: 'w-28' },
+  { id: 'campus', label: 'Campus', widthClass: 'w-28' },
+  { id: 'gradeLevel', label: 'Grade', widthClass: 'w-20' },
+  { id: 'status', label: 'Status', widthClass: 'w-24' },
+  { id: 'daysRemaining', label: 'Days Left', widthClass: 'w-24' },
+  { id: 'projectedReleaseDate', label: 'Release Date', widthClass: 'w-32' },
+];
+
+
+export const WeeklyView: React.FC = () => {
+  // const { students, attendance, holidays, markAttendance, loading } = useAppData(); // REMOVED
+  const { settings } = useSettings();
+  const { data: schoolYears = [] } = useSchoolYears();
+
+  const [currentDate, setCurrentDate] = useState<string>(toISODateString(new Date()));
+
+  // Derive school year - prefer manual selection, else auto-detect
+  const schoolYear = useMemo(() => {
+    if (settings.activeSchoolYear) {
+      return settings.activeSchoolYear;
+    }
+    return getSchoolYearFromDate(new Date(currentDate + "T12:00:00Z"), schoolYears);
+  }, [settings.activeSchoolYear, currentDate, schoolYears]);
+
+  const { data: rawStudents, isLoading: studentsLoading } = useStudents(schoolYear);
+  const { data: holidays = [] } = useHolidays();
+  const { mutate: saveAttendance } = useSaveAttendance();
+  const { mutate: deleteAttendance } = useDeleteAttendance();
+
+  // Helper types
+  function urlHolidaysToHolidays(hols: any[]) { return hols; }
+
+  const startOfWeek = useMemo(() => getStartOfWeek(new Date(currentDate + 'T12:00:00Z')), [currentDate]);
+  const displayDays = useMemo(() => getWeekDays(startOfWeek), [startOfWeek]);
+
+  // Fetch attendance for the visible week
+  // Calculate end of week (last day of displayDays)
+  const rangeStartStr = toISODateString(displayDays[0]);
+  const rangeEndStr = toISODateString(displayDays[displayDays.length - 1]);
+
+  const { data: attendanceRecords = [], isLoading: attendanceLoading } = useAttendanceRange(rangeStartStr, rangeEndStr);
+
+  const studentsInYear = useMemo(() => {
+    if (!rawStudents) return [];
+    return rawStudents.map(s => {
+      // Map to student interface expected by UI
+      const daysAttended = s.days_attended || 0;
+      const creditDays = s.credit_days || 0;
+      const daysRemaining = Math.max(0, s.days_assigned - daysAttended - creditDays);
+
+      const entryDate = s.start_date;
+      const projectedReleaseDate = calculateReleaseDateFromRemaining(
+        daysRemaining,
+        urlHolidaysToHolidays(holidays),
+        toISODateString(new Date())
+      );
+
+      return {
+        ...s,
+        id: s.studentId,
+        studentNumber: s.student_number,
+        firstName: s.first_name,
+        lastName: s.last_name,
+        gradeLevel: s.grade_level,
+        sped504: s.sped_504,
+        status: s.status as StudentStatus,
+        entryDate,
+        daysRemaining,
+        projectedReleaseDate,
+        daysAssigned: s.days_assigned,
+        creditDays: s.credit_days,
+        enrollmentId: s.enrollmentId,
+        registrationDate: s.start_date, // approximate
+      };
+    });
+  }, [rawStudents, holidays]);
+
+  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'lastName', direction: 'asc' });
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Filters
+  const [statusFilter, setStatusFilter] = useState<StudentStatus | 'All'>(StudentStatus.Active);
+  const [gradeFilter, setGradeFilter] = useState('All');
+  const [spedFilter, setSpedFilter] = useState('All');
+
+  const gradeLevels = useMemo(
+    () => ['All', ...Array.from(new Set(studentsInYear.map(s => s.gradeLevel).filter(Boolean)))],
+    [studentsInYear]
+  );
+  const spedOptions = ['All', 'None', 'SPED', '504'];
+
+  const holidaySet = useMemo(() => new Set(holidays.map(h => h.date)), [holidays]);
+  const todayStr = toISODateString(new Date());
+
+  const changeWeek = (offset: number) => {
+    setCurrentDate(prev => {
+      const newDate = new Date(prev + 'T12:00:00Z');
+      newDate.setDate(newDate.getDate() + (offset * 7));
+      return toISODateString(newDate);
+    });
+  };
+
+  const handleDateJump = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const dateVal = e.target.value;
+    if (dateVal) {
+      setCurrentDate(dateVal);
+    }
+  }
+
+  const sortedAndFilteredStudents = useMemo(() => {
+    let filtered = studentsInYear.filter(s => {
+      // Logic from legacy: filter by school year dates (handled by useStudents query)
+      // Additional logic: filter by status, grade, etc.
+
+      const statusMatch = statusFilter === 'All' || s.status === statusFilter;
+      const gradeMatch = gradeFilter === 'All' || s.gradeLevel === gradeFilter;
+      const spedMatch = spedFilter === 'All' || s.sped504 === spedFilter;
+      const searchMatch = `${s.firstName} ${s.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        s.id.toLowerCase().includes(searchTerm.toLowerCase());
+      return statusMatch && gradeMatch && spedMatch && searchMatch;
+    });
+
+    return [...filtered].sort((a, b) => {
+      const aVal = a[sortConfig.key as keyof WeeklyStudent];
+      const bVal = b[sortConfig.key as keyof WeeklyStudent];
+      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [studentsInYear, statusFilter, gradeFilter, spedFilter, sortConfig, searchTerm]);
+
+  const handleMarkAttendance = (studentId: string, date: string, currentPresence: Presence | undefined, targetPresence: Presence) => {
+    const newPresence = currentPresence === targetPresence ? null : targetPresence;
+
+    if (newPresence === null) {
+      deleteAttendance({ studentId, date });
+      return;
+    }
+
+    saveAttendance([{
+      id: crypto.randomUUID(),
+      enrollment_id: studentsInYear.find(s => s.id === studentId)?.enrollmentId!,
+      student_id: studentId,
+      date: date,
+      presence: newPresence
+    }]);
+  };
+
+  const requestSort = (key: SortKey) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const getCellValue = (student: WeeklyStudent, columnId: SortKey) => {
+    switch (columnId) {
+      case 'lastName':
+        return <Link to={`/student/${student.id}`} className="hover:underline text-brand-dark dark:text-brand-light">{student.lastName}</Link>;
+      case 'firstName':
+        return student.firstName;
+      case 'studentNumber':
+        return student.studentNumber || student.id;
+      case 'campus':
+        return student.campus;
+      case 'gradeLevel':
+        return student.gradeLevel;
+      case 'status':
+        return <StatusBadge status={student.status} />;
+      case 'daysRemaining':
+        return <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${student.daysRemaining > 10 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{student.daysRemaining}</span>
+      case 'projectedReleaseDate': {
+        const dateVal = student.projectedReleaseDate;
+        return dateVal && dateVal !== 'N/A' && dateVal !== 'Completed' ? formatDateForDisplay(dateVal as string) : dateVal;
+      }
+      default:
+        return student[columnId as keyof WeeklyStudent] as string | number;
+    }
+  }
+
+  const loading = studentsLoading || attendanceLoading;
+
+  if (loading) return <PageLoadingSkeleton />;
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow-sm flex justify-between items-center flex-wrap gap-4">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={() => changeWeek(-1)} className="px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-50 dark:hover:bg-slate-600">Prev Week</button>
+          <input type="date" value={currentDate} onChange={handleDateJump} className="p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white" />
+          <button onClick={() => changeWeek(1)} className="px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-50 dark:hover:bg-slate-600">Next Week</button>
+        </div>
+      </div>
+
+      <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow-sm flex items-center gap-4 flex-wrap">
+        <input
+          type="text"
+          placeholder="Search by name or ID..."
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          className="w-full md:w-1/3 p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white"
+        />
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-medium">Status:</label>
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white">
+            <option value="All">All</option>
+            <option value={StudentStatus.Active}>Active</option>
+            <option value={StudentStatus.Completed}>Completed</option>
+            <option value={StudentStatus.Withdrawn}>Withdrawn</option>
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-medium">Grade:</label>
+          <select value={gradeFilter} onChange={e => setGradeFilter(e.target.value)} className="p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white">
+            {gradeLevels.map(g => <option key={g} value={g}>{g}</option>)}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-medium">SPED/504:</label>
+          <select value={spedFilter} onChange={e => setSpedFilter(e.target.value)} className="p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white">
+            {spedOptions.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="bg-white dark:bg-slate-900 rounded-lg shadow-sm overflow-x-auto">
+        <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+          <thead className="bg-slate-50 dark:bg-slate-800">
+            <tr>
+              {fixedColumns.map((col, index) => (
+                <th
+                  key={col.id}
+                  onClick={() => requestSort(col.id)}
+                  className={`py-3 px-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider cursor-pointer whitespace-nowrap ${col.isSticky ? `sticky z-20 bg-slate-50 dark:bg-slate-800 ${index === 0 ? 'left-0' : 'left-32'}` : ''} ${col.widthClass ? col.widthClass : ''}`}
+                >
+                  {col.label} {sortConfig.key === col.id ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
+                </th>
+              ))}
+              {displayDays.map(day => (
+                <th key={day.toISOString()} className="py-3 px-4 text-center text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                  {day.toLocaleDateString('en-US', { weekday: 'short' })}
+                  <span className="block font-normal text-slate-400">{formatDateForDisplay(day)}</span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="bg-white dark:bg-slate-900 divide-y divide-slate-200 dark:divide-slate-700">
+            {sortedAndFilteredStudents.map(student => (
+              <tr key={student.id} className="hover:bg-slate-50 dark:hover:bg-slate-800">
+                {fixedColumns.map((col, index) => (
+                  <td key={col.id} className={`py-3 px-4 whitespace-nowrap text-sm font-medium text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 ${col.isSticky ? `sticky z-10 ${index === 0 ? 'left-0' : 'left-32'}` : ''} ${col.widthClass ? col.widthClass : ''}`}>
+                    {getCellValue(student, col.id)}
+                  </td>
+                ))}
+                {displayDays.map(day => {
+                  const dateStr = toISODateString(day);
+                  // Find attendance record in fetched range
+                  const attendanceRecord = attendanceRecords.find(a => a.student_id === student.id && a.date === dateStr);
+
+                  const isFuture = dateStr > todayStr;
+                  const isBeforeEntry = dateStr < student.entryDate;
+                  const isHoliday = holidaySet.has(dateStr);
+                  const isDisabled = student.status !== StudentStatus.Active || isFuture || isBeforeEntry || isHoliday;
+                  const isRegistrationDay = student.registrationDate === dateStr;
+
+                  if (isHoliday) {
+                    return <td key={dateStr} className="py-3 px-4 text-center bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 text-xs font-bold">HOLIDAY</td>
+                  }
+
+                  return (
+                    <td key={dateStr} className="py-3 px-4 text-center relative">
+                      {isRegistrationDay && <span className="absolute top-1 right-1 text-xs font-bold text-purple-600 dark:text-purple-400" title={`Registered on ${formatDateForDisplay(dateStr)}`}>R</span>}
+                      {isDisabled ? <div className="h-8 w-16" /> : (
+                        <div className="flex justify-center items-center gap-2">
+                          <AttendanceButton
+                            currentPresence={attendanceRecord?.presence as Presence}
+                            targetPresence={Presence.Present}
+                            onClick={() => handleMarkAttendance(student.id, dateStr, attendanceRecord?.presence as Presence, Presence.Present)}
+                          />
+                          <AttendanceButton
+                            currentPresence={attendanceRecord?.presence as Presence}
+                            targetPresence={Presence.Absent}
+                            onClick={() => handleMarkAttendance(student.id, dateStr, attendanceRecord?.presence as Presence, Presence.Absent)}
+                          />
+                        </div>
+                      )}
+                    </td>
+                  )
+                })}
+              </tr>
+            )
+            )}
+          </tbody>
+        </table>
+        {sortedAndFilteredStudents.length === 0 && <p className="text-center p-8 text-slate-500 dark:text-slate-400">No students match the current filter.</p>}
+      </div>
+    </div>
+  );
+};
