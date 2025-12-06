@@ -32,7 +32,7 @@ const fixedColumns: { id: SortKey; label: string; isSticky?: boolean; widthClass
 
 export const WeeklyView: React.FC = () => {
   // const { students, attendance, holidays, markAttendance, loading } = useAppData(); // REMOVED
-  const { settings } = useSettings();
+  const { settings, saveSettings } = useSettings();
   const { data: schoolYears = [] } = useSchoolYears();
 
   const [currentDate, setCurrentDate] = useState<string>(toISODateString(new Date()));
@@ -81,9 +81,22 @@ export const WeeklyView: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
 
   // Filters
-  const [statusFilter, setStatusFilter] = useState<StudentStatus | 'All'>(StudentStatus.Active);
-  const [gradeFilter, setGradeFilter] = useState('All');
-  const [spedFilter, setSpedFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState<StudentStatus | 'All'>(
+    (settings.weeklyFilters?.status as StudentStatus | 'All') || StudentStatus.Active
+  );
+  const [gradeFilter, setGradeFilter] = useState(settings.weeklyFilters?.grade || 'All');
+  const [spedFilter, setSpedFilter] = useState(settings.weeklyFilters?.sped || 'All');
+
+  // Persist weekly filters
+  React.useEffect(() => {
+    saveSettings({
+      weeklyFilters: {
+        status: statusFilter,
+        grade: gradeFilter,
+        sped: spedFilter
+      }
+    });
+  }, [statusFilter, gradeFilter, spedFilter, saveSettings]);
 
   const gradeLevels = useMemo(
     () => ['All', ...Array.from(new Set(studentsInYear.map(s => s.gradeLevel).filter(Boolean)))],

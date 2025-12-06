@@ -79,6 +79,21 @@ export interface AppSettings {
   backupFolderPath: string | null;
   autoBackupFrequency: AutoBackupFrequency;
   lastAutoBackupDate: string | null;
+
+  // Persistent Filters
+  rosterFilters: {
+    status: string;
+    campus: string;
+    gradeLevel: string;
+    sped504: string;
+    entryDateFrom: string;
+    entryDateTo: string;
+  };
+  weeklyFilters: {
+    status: string;
+    grade: string;
+    sped: string;
+  };
 }
 
 export interface SchoolYear {

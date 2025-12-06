@@ -163,7 +163,13 @@ export const RosterPage: React.FC = () => {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  const [filters, setFilters] = useState(initialFilters);
+  const [filters, setFilters] = useState(settings.rosterFilters || initialFilters);
+
+  // Persist filters on change
+  useEffect(() => {
+    saveSettings({ rosterFilters: filters });
+  }, [filters, saveSettings]);
+
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'lastName', direction: 'asc' });
   const [projectionMethod, setProjectionMethod] = useState<'today' | 'entryDate'>('today');
 

@@ -27,6 +27,19 @@ export const defaultSettings: AppSettings = {
   backupFolderPath: null,
   autoBackupFrequency: 'off',
   lastAutoBackupDate: null,
+  rosterFilters: {
+    status: 'All',
+    campus: 'All',
+    gradeLevel: 'All',
+    sped504: 'All',
+    entryDateFrom: '',
+    entryDateTo: ''
+  },
+  weeklyFilters: {
+    status: 'All',
+    grade: 'All',
+    sped: 'All'
+  }
 };
 
 export const getSettings = (): AppSettings => {
