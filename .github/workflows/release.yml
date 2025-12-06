@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [macos-latest] # Add windows-latest or ubuntu-latest if needed
+        platform: [macos-latest, windows-latest]
     runs-on: ${{ matrix.platform }}
 
     steps:
