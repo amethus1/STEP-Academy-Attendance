@@ -30,7 +30,7 @@
       "endpoints": [
         "https://github.com/amethus1/STEP-Academy-Attendance/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEMwM0I1Q0E2MTE2QTA1MDkKUldRSkJXb1JwbHc3d01XRmFqei81eUgvNk81Slc5MFRYSGVkTUtkYmxKNWJsR0xhOGM5a3RITG0K"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEyMDA0QkI1MEZDMzk2RkYKUldUL2xzTVB0VXNBRXBRczZyNGorWXE2Ujg2YzYwUFdiaFhsQmU2ZDZEMnZWR09kNzZ3eUgwMk0K"
     }
   },
   "bundle": {
