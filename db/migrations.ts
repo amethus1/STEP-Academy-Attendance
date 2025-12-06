@@ -89,6 +89,29 @@ const MIGRATIONS: Migration[] = [
         CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp DESC);
         CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
         `
+    },
+    {
+        version: 3,
+        name: 'Create App Settings',
+        sql: `
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        -- Insert default settings
+        INSERT OR IGNORE INTO app_settings (key, value, updated_at) VALUES 
+            ('theme', '"system"', datetime('now')),
+            ('autoBackupEnabled', 'false', datetime('now')),
+            ('backupFrequency', '"weekly"', datetime('now')),
+            ('lastBackupDate', 'null', datetime('now')),
+            ('backupPath', '""', datetime('now')),
+            ('rosterVisibleColumns', '["lastName","firstName","status","projectedReleaseDate"]', datetime('now')),
+            ('rosterColumnOrder', '["studentNumber","lastName","firstName","campus","gradeLevel","sped504","drgOffense","creditDays","status","registrationDate","entryDate","exitDate","daysAssigned","daysAttended","daysRemaining","projectedReleaseDate","comments"]', datetime('now')),
+            ('weeklyViewFilters', '{}', datetime('now')),
+            ('rosterFilters', '{}', datetime('now')),
+            ('customFieldDefinitions', '[]', datetime('now'));
+        `
     }
 ];
 

@@ -11,19 +11,39 @@ interface SettingsContextType {
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
 export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [settings, setSettings] = useState<AppSettings>(settingsService.defaultSettings);
+  // Initialize with sync settings from localStorage for immediate render
+  const [settings, setSettings] = useState<AppSettings>(settingsService.getSettingsSync());
   const [isSettingsLoading, setIsSettingsLoading] = useState(true);
 
+  // Load settings from SQLite asynchronously
   useEffect(() => {
-    const loadedSettings = settingsService.getSettings();
-    setSettings(loadedSettings);
-    setIsSettingsLoading(false);
+    const loadSettings = async () => {
+      try {
+        const loadedSettings = await settingsService.getSettings();
+        setSettings(loadedSettings);
+      } catch (error) {
+        console.error('Failed to load settings:', error);
+        // Keep the sync-loaded settings as fallback
+      } finally {
+        setIsSettingsLoading(false);
+      }
+    };
+
+    loadSettings();
   }, []);
 
   const handleSaveSettings = useCallback((newSettings: Partial<AppSettings>) => {
     setSettings(prevSettings => {
       const updatedSettings = { ...prevSettings, ...newSettings };
-      settingsService.saveSettings(updatedSettings);
+
+      // Save asynchronously - fire and forget with error handling
+      settingsService.saveSettings(updatedSettings).catch(error => {
+        console.error('Failed to persist settings:', error);
+      });
+
+      // Also update localStorage synchronously for immediate persistence
+      localStorage.setItem('attendanceAppSettings', JSON.stringify(updatedSettings));
+
       return updatedSettings;
     });
   }, []);

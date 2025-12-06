@@ -316,7 +316,7 @@ export const WeeklyView: React.FC = () => {
           <tbody className="bg-white dark:bg-slate-900 divide-y divide-slate-200 dark:divide-slate-700">
             {sortedAndFilteredStudents.map(student => (
               <WeeklyStudentRow
-                key={student.id}
+                key={student.enrollmentId}
                 student={student}
                 displayDays={displayDays}
                 attendanceMap={attendanceByStudent[student.id] || EMPTY_MAP}

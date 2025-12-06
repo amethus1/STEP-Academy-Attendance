@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { RolloverModal } from './RolloverModal';
 import { CustomFieldDefinition, AutoBackupFrequency } from '../../types';
 import { TrashIcon } from '../icons/Icons';
-import { getExportData, importData, DBStudent, DBEnrollment, DBAttendance, DBHoliday } from '../../db/queries';
+import { getExportData, importData, DBStudent, DBEnrollment, DBAttendance, DBHoliday, recalculateAllSchoolYears, closeOldEnrollments } from '../../db/queries';
 import { performBackup, getFrequencyLabel } from '../../services/backupService';
 
 export const DataManagementPage: React.FC = () => {
@@ -21,6 +21,10 @@ export const DataManagementPage: React.FC = () => {
   const [isRolloverModalOpen, setIsRolloverModalOpen] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<string>('Loading...');
   const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isRecalculating, setIsRecalculating] = useState(false);
+  const [showRecalculateConfirm, setShowRecalculateConfirm] = useState(false);
+  const [isClosingOld, setIsClosingOld] = useState(false);
+  const [showCloseOldConfirm, setShowCloseOldConfirm] = useState(false);
 
   useEffect(() => {
     // SQLite managed internally
@@ -319,9 +323,126 @@ export const DataManagementPage: React.FC = () => {
     saveSettings({ customFieldDefinitions: customFieldDefinitions.filter(f => f.id !== id) });
   };
 
+  const handleRecalculateSchoolYears = () => {
+    // Just show the modal - actual work happens in executeRecalculate
+    setShowRecalculateConfirm(true);
+  };
+
+  const executeRecalculate = () => {
+    setShowRecalculateConfirm(false);
+    setIsRecalculating(true);
+    recalculateAllSchoolYears()
+      .then((result) => {
+        queryClient.invalidateQueries();
+        if (result.updated === 0) {
+          toast.success(`All ${result.total} enrollments are already correct!`);
+        } else {
+          toast.success(`Updated ${result.updated} of ${result.total} enrollments.`);
+        }
+      })
+      .catch((e) => {
+        console.error("Failed to recalculate school years:", e);
+        toast.error("Failed to recalculate school years. Check console for details.");
+      })
+      .finally(() => {
+        setIsRecalculating(false);
+      });
+  };
+
+  const handleCloseOldEnrollments = () => {
+    setShowCloseOldConfirm(true);
+  };
+
+  const executeCloseOld = () => {
+    setShowCloseOldConfirm(false);
+    setIsClosingOld(true);
+
+    // Use current school year from settings
+    const currentYear = settings.schoolYearStartDate
+      ? `${new Date(settings.schoolYearStartDate).getFullYear()}-${new Date(settings.schoolYearStartDate).getFullYear() + 1}`
+      : '2024-2025';
+
+    closeOldEnrollments(currentYear)
+      .then((result) => {
+        queryClient.invalidateQueries();
+        if (result.updated === 0) {
+          toast.success('No old Active enrollments found!');
+        } else {
+          toast.success(`Closed ${result.updated} old enrollment(s).`);
+        }
+      })
+      .catch((e) => {
+        console.error("Failed to close old enrollments:", e);
+        toast.error("Failed to close old enrollments. Check console for details.");
+      })
+      .finally(() => {
+        setIsClosingOld(false);
+      });
+  };
+
   return (
     <div className="space-y-8 max-w-4xl mx-auto">
       <RolloverModal isOpen={isRolloverModalOpen} onClose={() => setIsRolloverModalOpen(false)} />
+
+      {/* Recalculate School Years Confirmation Modal */}
+      {showRecalculateConfirm && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4">Recalculate School Years?</h3>
+            <p className="text-slate-600 dark:text-slate-300 mb-2">
+              This will recalculate the school year for ALL enrollments based on their registration date.
+            </p>
+            <ul className="text-sm text-slate-500 dark:text-slate-400 mb-4 list-disc list-inside">
+              <li>If a defined school year covers the date, it will use that.</li>
+              <li>Otherwise, assumes July 15 starts a new school year.</li>
+            </ul>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowRecalculateConfirm(false)}
+                className="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={executeRecalculate}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-md font-medium"
+              >
+                Yes, Recalculate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Close Old Enrollments Confirmation Modal */}
+      {showCloseOldConfirm && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4">Close Old Enrollments?</h3>
+            <p className="text-slate-600 dark:text-slate-300 mb-2">
+              This will mark all "Active" enrollments from <strong>previous school years</strong> as "Completed".
+            </p>
+            <ul className="text-sm text-slate-500 dark:text-slate-400 mb-4 list-disc list-inside">
+              <li>Only affects enrollments NOT in the current school year</li>
+              <li>Sets status to "Completed" with an exit date of June 30</li>
+            </ul>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowCloseOldConfirm(false)}
+                className="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={executeCloseOld}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md font-medium"
+              >
+                Yes, Close Old Enrollments
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div>
         <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Data Management</h1>
@@ -481,6 +602,46 @@ export const DataManagementPage: React.FC = () => {
               accept=".json"
               className="hidden"
             />
+          </div>
+        </div>
+      </div>
+
+      {/* Maintenance Section - at the bottom */}
+      <div className="bg-white dark:bg-slate-900 p-6 rounded-lg shadow-sm border border-slate-200 dark:border-slate-800">
+        <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">Maintenance</h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+          Advanced tools for fixing data issues. Use with caution.
+        </p>
+
+        <div className="space-y-4">
+          <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border dark:border-slate-700">
+            <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-2">Recalculate School Years</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">
+              Re-assigns the school year for each enrollment based on its registration date.
+              Uses defined school years if available, otherwise assumes school year starts July 15.
+            </p>
+            <button
+              onClick={handleRecalculateSchoolYears}
+              disabled={isRecalculating}
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-400 text-white font-semibold rounded-md"
+            >
+              {isRecalculating ? 'Recalculating...' : 'Recalculate School Years'}
+            </button>
+          </div>
+
+          <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border dark:border-slate-700">
+            <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-2">Close Old Enrollments</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">
+              Marks all "Active" enrollments from previous school years as "Completed".
+              Use this to clean up enrollments that weren't properly closed during rollover.
+            </p>
+            <button
+              onClick={handleCloseOldEnrollments}
+              disabled={isClosingOld}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-semibold rounded-md"
+            >
+              {isClosingOld ? 'Closing...' : 'Close Old Enrollments'}
+            </button>
           </div>
         </div>
       </div>

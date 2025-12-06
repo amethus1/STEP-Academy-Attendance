@@ -1,5 +1,5 @@
 import { Student, AttendanceRecord, Holiday, Presence } from '../types';
-import { getSettings } from './settingsService';
+import { getSettingsSync } from './settingsService';
 
 export const toISODateString = (date: Date): string => {
   // Use local date components to avoid UTC conversion shifting dates
@@ -10,8 +10,14 @@ export const toISODateString = (date: Date): string => {
 };
 
 export const formatDateForDisplay = (date: Date | string): string => {
-  const { dateFormat } = getSettings();
+  if (!date) return '';
+  const { dateFormat } = getSettingsSync();
   const d = typeof date === 'string' ? new Date(date + 'T12:00:00Z') : new Date(date);
+
+  // Check if date is valid
+  if (isNaN(d.getTime())) {
+    return typeof date === 'string' ? date : '';
+  }
 
   // Ensure we are working with UTC dates to prevent timezone-off-by-one errors
   const year = d.getUTCFullYear();

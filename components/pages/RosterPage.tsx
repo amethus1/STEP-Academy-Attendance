@@ -1,22 +1,22 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { useStudents, useCreateStudent } from '../../hooks/useStudents';
+import { useUniqueStudents, useCreateStudent } from '../../hooks/useStudents';
 import { useSchoolYears } from '../../hooks/useSchoolYears';
 import { useHolidays } from '../../hooks/useAttendance';
 import { useSettings } from '../../hooks/useSettings';
 import { Student, StudentStatus, CustomFieldDefinition } from '../../types';
 import { DBStudent, DBEnrollment } from '../../db/queries';
 import { toISODateString, formatDateForDisplay } from '../../services/dateUtils';
-import { mapDBStudentToUI, ExtendedStudent } from '../../services/mappers';
+import { mapUniqueStudentToUI, UniqueStudentUI, mapDBHolidaysToHolidays } from '../../services/mappers';
 import { exportToCsv } from '../../services/csvService';
 import { StudentFormModal } from '../common/StudentFormModal';
 import { StatusBadge } from '../common/StatusBadge';
 import { PageLoadingSkeleton } from '../common/SkeletonLoader';
 import { DocumentArrowDownIcon } from '../icons/Icons';
 
-type SortKey = keyof ExtendedStudent | string;
+type SortKey = keyof UniqueStudentUI | string;
 type SortDirection = 'asc' | 'desc';
-// Local ExtendedStudent definition moved to mappers.ts
+// Using UniqueStudentUI from mappers.ts for unified student view
 type ColumnDefinition = { id: SortKey; label: string; isCustom: boolean };
 
 const ColumnConfigModal: React.FC<{
@@ -173,7 +173,7 @@ export const RosterPage: React.FC = () => {
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'lastName', direction: 'asc' });
   const [projectionMethod, setProjectionMethod] = useState<'today' | 'entryDate'>('today');
 
-  const { data: rawStudents, isLoading: studentsLoading } = useStudents({
+  const { data: rawStudents, isLoading: studentsLoading } = useUniqueStudents({
     schoolYear: selectedSchoolYear,
     searchTerm: debouncedSearchTerm,
     status: filters.status,
@@ -184,8 +184,8 @@ export const RosterPage: React.FC = () => {
   });
   const { data: holidays = [] } = useHolidays();
 
-  // Helper to match types
-  function urlHolidaysToHolidays(hols: any[]) { return hols; }
+  // Convert DB holidays to UI format using centralized mapper
+  const holidaysUI = useMemo(() => mapDBHolidaysToHolidays(holidays), [holidays]);
 
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
@@ -240,17 +240,17 @@ export const RosterPage: React.FC = () => {
   const studentData = useMemo(() => {
     if (!rawStudents) return [];
     return rawStudents.map(s => {
-      const projectionStart = projectionMethod === 'today' ? undefined : s.start_date;
-      return mapDBStudentToUI(s, urlHolidaysToHolidays(holidays), projectionStart);
+      const projectionStart = projectionMethod === 'today' ? undefined : s.latest_start_date;
+      return mapUniqueStudentToUI(s, holidaysUI, projectionStart);
     });
-  }, [rawStudents, holidays, projectionMethod]);
+  }, [rawStudents, holidaysUI, projectionMethod]);
 
   const campuses = useMemo(
-    () => ['All', ...Array.from(new Set((rawStudents || []).map(s => s.campus).filter(Boolean)))],
+    () => ['All', ...Array.from(new Set((rawStudents || []).map(s => s.latest_campus).filter(Boolean)))],
     [rawStudents]
   );
   const gradeLevels = useMemo(
-    () => ['All', ...Array.from(new Set((rawStudents || []).map(s => s.grade_level).filter(Boolean)))],
+    () => ['All', ...Array.from(new Set((rawStudents || []).map(s => s.latest_grade_level).filter(Boolean)))],
     [rawStudents]
   );
   const spedOptions = ['All', 'None', 'SPED', '504'];
@@ -290,8 +290,8 @@ export const RosterPage: React.FC = () => {
           aVal = a.studentNumber || a.id;
           bVal = b.studentNumber || b.id;
         } else {
-          aVal = a[sortConfig.key as keyof ExtendedStudent];
-          bVal = b[sortConfig.key as keyof ExtendedStudent];
+          aVal = a[sortConfig.key as keyof UniqueStudentUI];
+          bVal = b[sortConfig.key as keyof UniqueStudentUI];
         }
       }
 
@@ -385,7 +385,7 @@ export const RosterPage: React.FC = () => {
         } else if (h.key === 'studentNumber') {
           row[h.key] = student.studentNumber || student.id;
         } else {
-          row[h.key] = student[h.key as keyof ExtendedStudent];
+          row[h.key] = student[h.key as keyof UniqueStudentUI];
         }
       });
       return row;
@@ -402,7 +402,7 @@ export const RosterPage: React.FC = () => {
         onClose={() => setIsStudentModalOpen(false)}
         onSave={handleSaveStudent}
         existingIds={(rawStudents || []).map(s => s.studentId)}
-        existingStudents={studentData}
+        existingStudents={studentData as any}
         customFieldDefinitions={customFieldDefinitions}
       />
       <ColumnConfigModal isOpen={isConfigModalOpen} onClose={() => setIsConfigModalOpen(false)} allColumns={allColumns} visibleColumns={rosterVisibleColumns} columnOrder={rosterColumnOrder} onConfigChange={handleConfigChange} />
@@ -459,7 +459,7 @@ export const RosterPage: React.FC = () => {
           </thead>
           <tbody className="bg-white dark:bg-slate-900 divide-y divide-slate-200 dark:divide-slate-700">
             {sortedAndFilteredStudents.map(s => (
-              <tr key={s.enrollmentId} className="hover:bg-slate-50 dark:hover:bg-slate-800">
+              <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-800">
                 {orderedVisibleHeaders.map(col => {
                   let cellContent: any;
                   const isDateColumn = ['registrationDate', 'entryDate', 'exitDate', 'projectedReleaseDate'].includes(col.id as string);
@@ -467,17 +467,26 @@ export const RosterPage: React.FC = () => {
                   if (col.isCustom) {
                     cellContent = s.customFields[col.id] ?? 'N/A';
                   } else if (col.id === 'lastName') {
-                    cellContent = <Link to={`/student/${s.id}`} className="font-medium text-brand-dark hover:underline dark:text-brand-light">{s.lastName}</Link>;
+                    cellContent = (
+                      <span className="flex items-center gap-2">
+                        <Link to={`/student/${s.id}`} className="font-medium text-brand-dark hover:underline dark:text-brand-light">{s.lastName}</Link>
+                        {selectedSchoolYear === 'All' && s.enrollmentCount > 1 && (
+                          <span className="px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs font-medium rounded-full" title={`${s.enrollmentCount} total enrollments`}>
+                            ×{s.enrollmentCount}
+                          </span>
+                        )}
+                      </span>
+                    );
                   } else if (col.id === 'status') {
                     cellContent = <StatusBadge status={s.status} />;
                   } else if (col.id === 'studentNumber') {
                     cellContent = s.studentNumber || s.id;
                   } else if (isDateColumn) {
-                    const dateVal = s[col.id as keyof ExtendedStudent];
-                    cellContent = dateVal && dateVal !== 'N/A' && dateVal !== 'Completed' ? formatDateForDisplay(dateVal as string) : dateVal;
+                    const dateVal = s[col.id as keyof UniqueStudentUI];
+                    cellContent = dateVal && dateVal !== 'N/A' && dateVal !== 'Completed' && dateVal !== 'Withdrawn' ? formatDateForDisplay(dateVal as string) : dateVal;
                   }
                   else {
-                    cellContent = s[col.id as keyof ExtendedStudent];
+                    cellContent = s[col.id as keyof UniqueStudentUI];
                   }
                   return <td key={col.id} className="py-3 px-4 whitespace-nowrap text-sm text-slate-700 dark:text-slate-300">{cellContent}</td>
                 })}

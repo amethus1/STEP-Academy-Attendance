@@ -5,7 +5,7 @@ import { useSettings } from '../../hooks/useSettings';
 import { useStudents, useCreateStudent } from '../../hooks/useStudents';
 import { useSchoolYears } from '../../hooks/useSchoolYears';
 import { toast } from 'sonner';
-import { DBStudent, DBEnrollment } from '../../db/queries';
+import { DBStudent, DBEnrollment, updateStudentEnrollment } from '../../db/queries';
 import { getSchoolYearFromDate } from '../../services/dateUtils';
 
 interface RolloverModalProps {
@@ -57,6 +57,7 @@ export const RolloverModal: React.FC<RolloverModalProps> = ({ isOpen, onClose })
             // ID mapping handled by rawStudents? rawStudents is StudentWithEnrollment.
             // s.id is studentId (Profile). s.enrollmentId is Enrollment.
             id: s.studentId,
+            enrollmentId: s.enrollmentId, // Need this to close out old enrollment
             status: s.status as StudentStatus,
             registrationDate: s.start_date, // or use start_date for filtering?
             // Need other fields if creating new student objects
@@ -139,23 +140,45 @@ export const RolloverModal: React.FC<RolloverModalProps> = ({ isOpen, onClose })
         try {
             // 1. Prepare data
             const studentsToProcess = studentStates.filter(s => s.action !== 'exit');
+            const studentsToExit = studentStates.filter(s => s.action === 'exit');
             const targetSchoolYear = getSchoolYearFromDate(new Date(newStartDate));
 
-            // 2. Execute Promotes/Retains
-            // We are creating NEW Enrollments for EXISTING profiles.
-            const promises = studentsToProcess.map(async (state) => {
+            // Calculate exit date as the day before the new year starts
+            const exitDate = new Date(newStartDate);
+            exitDate.setDate(exitDate.getDate() - 1);
+            const exitDateStr = exitDate.toISOString().split('T')[0];
+
+            // 2. Close out ALL old enrollments (both exiting AND promoted/retained students)
+            const closeOutPromises = students.map(async (student) => {
+                const state = studentStates.find(s => s.studentId === student.id);
+                if (!state) return;
+
+                // Determine the final status
+                const finalStatus = state.action === 'exit' ? 'Completed' : 'Completed';
+
+                // Update old enrollment: set status to Completed and add exit date
+                await updateStudentEnrollment(student.enrollmentId, {
+                    status: finalStatus,
+                    end_date: exitDateStr
+                });
+            });
+
+            await Promise.all(closeOutPromises);
+
+            // 3. Create NEW enrollments for promoted/retained students ONLY
+            const createPromises = studentsToProcess.map(async (state) => {
                 const originalStudent = students.find(s => s.id === state.studentId);
                 if (!originalStudent) return;
 
                 // Create Enrollment
                 const enrollment: DBEnrollment = {
                     id: crypto.randomUUID(),
-                    student_id: originalStudent.id, // Link to SAme Profile
+                    student_id: originalStudent.id,
                     school_year: targetSchoolYear,
                     start_date: defaultEntryDate,
                     end_date: null, // Active
                     grade_level: state.nextGrade,
-                    campus: originalStudent.campus || '', // Default to same campus? Not in mapped Student, check type
+                    campus: originalStudent.campus || '',
                     status: 'Active',
                     sped_504: originalStudent.sped504 || null,
                     drg_offense: null,
@@ -163,11 +186,6 @@ export const RolloverModal: React.FC<RolloverModalProps> = ({ isOpen, onClose })
                     credit_days: 0,
                     comments: `Rollover from ${currentSchoolYear}`
                 };
-
-                // profile object needed for useCreateStudent signature?
-                // useCreateStudent expects { student: DBStudent, enrollment: DBEnrollment }
-                // and it performs "Insert if not exists, else update". 
-                // So we can pass the existing profile data.
 
                 const profile: DBStudent = {
                     id: originalStudent.id,
@@ -186,21 +204,22 @@ export const RolloverModal: React.FC<RolloverModalProps> = ({ isOpen, onClose })
                 await createStudent({ student: profile, enrollment });
             });
 
-            await Promise.all(promises);
+            await Promise.all(createPromises);
 
-            // 3. Update School Year Settings
+            // 4. Update School Year Settings
             saveSettings({
                 schoolYearStartDate: newStartDate,
                 schoolYearEndDate: newEndDate
             });
 
-            // 4. Invalidate queries so the new school year appears in filters
+            // 5. Invalidate queries so the new school year appears in filters
             await queryClient.invalidateQueries({ queryKey: ['schoolYears'] });
             await queryClient.invalidateQueries({ queryKey: ['students'] });
+            await queryClient.invalidateQueries({ queryKey: ['studentEnrollments'] });
 
-            toast.success(`Rollover Complete! Enrolled ${studentsToProcess.length} students for ${targetSchoolYear}.`);
+            const exitCount = studentsToExit.length;
+            toast.success(`Rollover Complete! Enrolled ${studentsToProcess.length} students for ${targetSchoolYear}. ${exitCount} students marked completed.`);
             onClose();
-            // window.location.reload(); // React Query should handle updates if we invalidate properly
         } catch (e) {
             console.error(e);
             toast.error("Rollover failed. Check console for details.");

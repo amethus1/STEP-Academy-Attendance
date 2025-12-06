@@ -78,6 +78,56 @@ export interface StudentSearchOptions {
     offset?: number;
 }
 
+// --- NEW: Unified Student Types (one row per student, not per enrollment) ---
+
+/**
+ * Represents a unique student with their most recent enrollment data and aggregates.
+ * Used for roster views where we want ONE row per student, not one per enrollment.
+ */
+export interface UniqueStudentRow {
+    // Student core data (from students table)
+    studentId: string;
+    student_number: string | null;
+    first_name: string;
+    last_name: string;
+    photo_url: string | null;
+    guardian_name: string | null;
+    guardian_phone: string | null;
+    emergency_contact_name: string | null;
+    emergency_contact_phone: string | null;
+    custom_fields: string | null;
+
+    // Latest enrollment data (most recent by start_date)
+    latest_enrollment_id: string;
+    latest_school_year: string;
+    latest_grade_level: string;
+    latest_campus: string | null;
+    latest_status: string;
+    latest_start_date: string;
+    latest_end_date: string | null;
+    latest_days_assigned: number;
+    latest_credit_days: number;
+    latest_sped_504: string | null;
+    latest_drg_offense: string | null;
+    latest_comments: string | null;
+
+    // Aggregated data across all enrollments
+    enrollment_count: number;
+    total_days_attended: number;
+    latest_days_attended: number;
+}
+
+export interface UniqueStudentSearchOptions {
+    schoolYear?: string;  // 'All' or specific year - filters students who have ANY enrollment in that year
+    status?: string;      // Filter by latest enrollment status
+    campus?: string;      // Filter by latest enrollment campus
+    gradeLevel?: string;  // Filter by latest enrollment grade level
+    sped504?: string;     // Filter by latest enrollment SPED/504 status
+    searchTerm?: string;
+    sortKey?: string;
+    sortDirection?: 'asc' | 'desc';
+}
+
 // --- Queries ---
 
 export const searchStudents = async (options: StudentSearchOptions): Promise<StudentWithEnrollment[]> => {
@@ -218,6 +268,164 @@ export const getStudentsByYear = async (schoolYear: string): Promise<StudentWith
     return searchStudents({ schoolYear });
 };
 
+/**
+ * Returns unique students (one row per student) with their most recent enrollment data.
+ * Solves the "duplicate student" problem in roster views.
+ * 
+ * Students are returned if they have ANY enrollment in the specified school year,
+ * but the enrollment data shown is always from their LATEST enrollment.
+ */
+export const getUniqueStudents = async (options: UniqueStudentSearchOptions): Promise<UniqueStudentRow[]> => {
+    const db = await getDb();
+    const { schoolYear = 'All', status, campus, gradeLevel, sped504, searchTerm, sortKey = 'lastName', sortDirection = 'asc' } = options;
+
+    let conditions: string[] = [];
+    let params: any[] = [];
+    let paramIndex = 1;
+
+    // Build the query using a subquery to get the latest enrollment per student
+    // We use a window function to rank enrollments by start_date
+    let query = `
+        WITH ranked_enrollments AS (
+            SELECT 
+                e.*,
+                ROW_NUMBER() OVER (PARTITION BY e.student_id ORDER BY e.start_date DESC) as rn
+            FROM enrollments e
+        ),
+        enrollment_stats AS (
+            SELECT 
+                e.id as enrollment_id,
+                (SELECT COUNT(*) FROM attendance a WHERE a.enrollment_id = e.id AND a.presence = 'Present') as days_attended
+            FROM enrollments e
+        ),
+        student_aggregates AS (
+            SELECT 
+                e.student_id,
+                COUNT(*) as enrollment_count,
+                COALESCE(SUM(es.days_attended), 0) as total_days_attended
+            FROM enrollments e
+            LEFT JOIN enrollment_stats es ON e.id = es.enrollment_id
+            GROUP BY e.student_id
+        )
+        SELECT 
+            s.id as studentId,
+            s.student_number,
+            s.first_name,
+            s.last_name,
+            s.photo_url,
+            s.guardian_name,
+            s.guardian_phone,
+            s.emergency_contact_name,
+            s.emergency_contact_phone,
+            s.custom_fields,
+            re.id as latest_enrollment_id,
+            re.school_year as latest_school_year,
+            re.grade_level as latest_grade_level,
+            re.campus as latest_campus,
+            re.status as latest_status,
+            re.start_date as latest_start_date,
+            re.end_date as latest_end_date,
+            re.days_assigned as latest_days_assigned,
+            re.credit_days as latest_credit_days,
+            re.sped_504 as latest_sped_504,
+            re.drg_offense as latest_drg_offense,
+            re.comments as latest_comments,
+            COALESCE(sa.enrollment_count, 0) as enrollment_count,
+            COALESCE(sa.total_days_attended, 0) as total_days_attended,
+            COALESCE(les.days_attended, 0) as latest_days_attended
+        FROM students s
+        INNER JOIN ranked_enrollments re ON s.id = re.student_id AND re.rn = 1
+        LEFT JOIN student_aggregates sa ON s.id = sa.student_id
+        LEFT JOIN enrollment_stats les ON re.id = les.enrollment_id
+    `;
+
+    // Filter by school year - show students who have ANY enrollment in that year
+    if (schoolYear && schoolYear !== 'All') {
+        conditions.push(`EXISTS (
+            SELECT 1 FROM enrollments e2 
+            WHERE e2.student_id = s.id AND e2.school_year = $${paramIndex}
+        )`);
+        params.push(schoolYear);
+        paramIndex++;
+    }
+
+    // Filter by status (of latest enrollment)
+    if (status && status !== 'All') {
+        conditions.push(`re.status = $${paramIndex}`);
+        params.push(status);
+        paramIndex++;
+    }
+
+    // Filter by campus (of latest enrollment)
+    if (campus && campus !== 'All') {
+        conditions.push(`re.campus = $${paramIndex}`);
+        params.push(campus);
+        paramIndex++;
+    }
+
+    // Filter by grade level (of latest enrollment)
+    if (gradeLevel && gradeLevel !== 'All') {
+        conditions.push(`re.grade_level = $${paramIndex}`);
+        params.push(gradeLevel);
+        paramIndex++;
+    }
+
+    // Filter by SPED/504 (of latest enrollment)
+    if (sped504 && sped504 !== 'All') {
+        conditions.push(`re.sped_504 = $${paramIndex}`);
+        params.push(sped504);
+        paramIndex++;
+    }
+
+    // Search term - searches name and student number
+    if (searchTerm) {
+        const term = `%${searchTerm}%`;
+        conditions.push(`(s.first_name LIKE $${paramIndex} OR s.last_name LIKE $${paramIndex + 1} OR s.student_number LIKE $${paramIndex + 2})`);
+        params.push(term, term, term);
+        paramIndex += 3;
+    }
+
+    if (conditions.length > 0) {
+        query += ` WHERE ${conditions.join(' AND ')}`;
+    }
+
+    // Sorting
+    const sortMap: Record<string, string> = {
+        lastName: 's.last_name',
+        firstName: 's.first_name',
+        studentNumber: 's.student_number',
+        gradeLevel: 're.grade_level',
+        campus: 're.campus',
+        status: 're.status',
+        enrollmentCount: 'enrollment_count',
+        totalDaysAttended: 'total_days_attended',
+        entryDate: 're.start_date'
+    };
+
+    const dbSortKey = sortMap[sortKey] || 's.last_name';
+    const dir = sortDirection === 'desc' ? 'DESC' : 'ASC';
+    query += ` ORDER BY ${dbSortKey} ${dir}, s.last_name ASC, s.first_name ASC`;
+
+    return await db.select(query, params);
+};
+
+/**
+ * Get all enrollments for a specific student with attendance counts.
+ * Used in student detail page to show enrollment history.
+ */
+export const getStudentEnrollments = async (studentId: string): Promise<(DBEnrollment & { days_attended: number })[]> => {
+    const db = await getDb();
+    const query = `
+        SELECT 
+            e.*,
+            (SELECT COUNT(*) FROM attendance a WHERE a.enrollment_id = e.id AND a.presence = 'Present') as days_attended
+        FROM enrollments e
+        WHERE e.student_id = $1
+        ORDER BY e.start_date DESC
+    `;
+    return await db.select(query, [studentId]);
+};
+
 export const getStudentDetails = async (studentId: string) => {
     const db = await getDb();
 
@@ -226,8 +434,15 @@ export const getStudentDetails = async (studentId: string) => {
     const student = students[0];
     if (!student) return null;
 
-    // Get Enrollments
-    const enrollments = await db.select<DBEnrollment[]>("SELECT * FROM enrollments WHERE student_id = $1 ORDER BY start_date DESC", [studentId]);
+    // Get Enrollments with days_attended counts
+    const enrollments = await db.select<(DBEnrollment & { days_attended: number })[]>(`
+        SELECT 
+            e.*,
+            (SELECT COUNT(*) FROM attendance a WHERE a.enrollment_id = e.id AND a.presence = 'Present') as days_attended
+        FROM enrollments e
+        WHERE e.student_id = $1 
+        ORDER BY e.start_date DESC
+    `, [studentId]);
 
     // Get Attendance (All? Or split by enrollment in UI?)
     // Let's get all for now, maybe optimize later if too big
@@ -329,16 +544,36 @@ export const getAttendanceByDateRange = async (startDate: string, endDate: strin
 };
 
 export const saveAttendance = async (records: DBAttendance[]) => {
-    const db = await getDb();
-    // Batch upsert? SQLite supports ON CONFLICT
+    if (records.length === 0) return;
 
-    for (const r of records) {
-        await db.execute(
-            `INSERT INTO attendance (id, student_id, enrollment_id, date, presence) 
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT(student_id, date) DO UPDATE SET presence=excluded.presence`,
-            [r.id, r.student_id, r.enrollment_id, r.date, r.presence]
-        );
+    const db = await getDb();
+
+    // Batch upsert using SQLite's multi-row INSERT
+    // Split into chunks to avoid SQLite's parameter limit (typically 999)
+    const BATCH_SIZE = 100; // Each record has 5 params, so 100 * 5 = 500 params per batch
+
+    for (let i = 0; i < records.length; i += BATCH_SIZE) {
+        const batch = records.slice(i, i + BATCH_SIZE);
+
+        // Build multi-row INSERT with placeholders
+        const valuePlaceholders: string[] = [];
+        const params: any[] = [];
+
+        batch.forEach((r, idx) => {
+            const offset = idx * 5;
+            valuePlaceholders.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5})`);
+            params.push(r.id, r.student_id, r.enrollment_id, r.date, r.presence);
+        });
+
+        const query = `
+            INSERT INTO attendance (id, student_id, enrollment_id, date, presence) 
+            VALUES ${valuePlaceholders.join(', ')}
+            ON CONFLICT(student_id, date) DO UPDATE SET 
+                presence = excluded.presence,
+                enrollment_id = excluded.enrollment_id
+        `;
+
+        await db.execute(query, params);
     }
 };
 
@@ -452,7 +687,19 @@ export const getExportData = async () => {
     const attendance = await db.select<DBAttendance[]>("SELECT * FROM attendance");
     const holidays = await db.select<DBHoliday[]>("SELECT * FROM holidays");
     const schoolYears = await db.select<DBSchoolYear[]>("SELECT * FROM school_years");
-    return { students, enrollments, attendance, holidays, schoolYears };
+
+    // Get settings (v3+)
+    const settingsRows = await db.select<{ key: string; value: string }[]>("SELECT key, value FROM app_settings");
+    const settings: Record<string, any> = {};
+    for (const row of settingsRows) {
+        try {
+            settings[row.key] = JSON.parse(row.value);
+        } catch {
+            settings[row.key] = row.value;
+        }
+    }
+
+    return { students, enrollments, attendance, holidays, schoolYears, settings };
 };
 
 export const importData = async (data: {
@@ -460,7 +707,8 @@ export const importData = async (data: {
     enrollments: DBEnrollment[],
     attendance: DBAttendance[],
     holidays: DBHoliday[],
-    schoolYears?: DBSchoolYear[]  // Optional for backward compatibility with legacy backups
+    schoolYears?: DBSchoolYear[],  // Optional for backward compatibility with legacy backups
+    settings?: Record<string, any>  // Optional settings from export
 }) => {
     const db = await getDb();
     // Execute without explicit transaction to avoid locking issues
@@ -513,4 +761,176 @@ export const importData = async (data: {
             );
         }
     }
+
+    // Import settings if present (new in v3)
+    if (data.settings) {
+        for (const [key, value] of Object.entries(data.settings)) {
+            await db.execute(
+                `INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ($1, $2, datetime('now'))`,
+                [key, JSON.stringify(value)]
+            );
+        }
+    }
+};
+
+// --- Settings ---
+
+interface DBAppSetting {
+    key: string;
+    value: string;
+    updated_at: string;
+}
+
+/**
+ * Get all app settings from SQLite.
+ * Returns a Record<string, any> where values are parsed from JSON.
+ */
+export const getAppSettingsFromDB = async (): Promise<Record<string, any>> => {
+    const db = await getDb();
+    const rows = await db.select<DBAppSetting[]>("SELECT key, value FROM app_settings");
+
+    const settings: Record<string, any> = {};
+    for (const row of rows) {
+        try {
+            settings[row.key] = JSON.parse(row.value);
+        } catch {
+            settings[row.key] = row.value; // Fallback if not valid JSON
+        }
+    }
+    return settings;
+};
+
+/**
+ * Save settings to SQLite. Only saves the keys that are provided.
+ */
+export const saveAppSettingsToDB = async (settings: Record<string, any>): Promise<void> => {
+    const db = await getDb();
+
+    for (const [key, value] of Object.entries(settings)) {
+        await db.execute(
+            `INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ($1, $2, datetime('now'))`,
+            [key, JSON.stringify(value)]
+        );
+    }
+};
+
+/**
+ * Get a single setting value from SQLite.
+ */
+export const getAppSettingFromDB = async (key: string): Promise<any | null> => {
+    const db = await getDb();
+    const rows = await db.select<DBAppSetting[]>("SELECT value FROM app_settings WHERE key = $1", [key]);
+
+    if (rows.length === 0) return null;
+
+    try {
+        return JSON.parse(rows[0].value);
+    } catch {
+        return rows[0].value;
+    }
+};
+
+// --- Maintenance Functions ---
+
+interface SchoolYearDefinition {
+    name: string;
+    start_date: string;
+    end_date: string;
+}
+
+/**
+ * Recalculate school years for all enrollments based on their registration (start_date).
+ * Uses defined school years if available, otherwise assumes July 15 - July 14 of next year.
+ * Returns the count of updated enrollments.
+ */
+export const recalculateAllSchoolYears = async (): Promise<{ updated: number; total: number }> => {
+    const db = await getDb();
+
+    // Get all defined school years
+    const definedYears = await db.select<SchoolYearDefinition[]>(
+        "SELECT name, start_date, end_date FROM school_years ORDER BY start_date DESC"
+    );
+
+    // Get all enrollments
+    const enrollments = await db.select<{ id: string; start_date: string; school_year: string }[]>(
+        "SELECT id, start_date, school_year FROM enrollments"
+    );
+
+    let updatedCount = 0;
+
+    for (const enrollment of enrollments) {
+        const registrationDate = enrollment.start_date;
+
+        // Determine correct school year
+        let correctSchoolYear: string | null = null;
+
+        // First, check if date falls within any defined school year
+        for (const year of definedYears) {
+            if (registrationDate >= year.start_date && registrationDate <= year.end_date) {
+                correctSchoolYear = year.name;
+                break;
+            }
+        }
+
+        // If no defined year matches, calculate based on July 15 cutoff
+        if (!correctSchoolYear) {
+            const date = new Date(registrationDate + 'T12:00:00Z');
+            const year = date.getFullYear();
+            const month = date.getMonth(); // 0-indexed
+            const day = date.getDate();
+
+            // July 15 or later = start of new school year
+            // July 14 or earlier = end of previous school year
+            // July is month 6 (0-indexed)
+            const isNewSchoolYear = month > 6 || (month === 6 && day >= 15);
+            const startYear = isNewSchoolYear ? year : year - 1;
+            correctSchoolYear = `${startYear}-${startYear + 1}`;
+        }
+
+        // Update if different
+        if (correctSchoolYear !== enrollment.school_year) {
+            await db.execute(
+                "UPDATE enrollments SET school_year = $1 WHERE id = $2",
+                [correctSchoolYear, enrollment.id]
+            );
+            updatedCount++;
+        }
+    }
+
+    return { updated: updatedCount, total: enrollments.length };
+};
+
+/**
+ * Close out all Active enrollments from previous school years.
+ * Sets status to 'Completed' and adds an end_date if missing.
+ * @param currentSchoolYear - The current active school year (e.g., "2024-2025")
+ * @returns Count of updated enrollments
+ */
+export const closeOldEnrollments = async (currentSchoolYear: string): Promise<{ updated: number; total: number }> => {
+    const db = await getDb();
+
+    // Find all Active enrollments NOT in the current school year
+    const oldActiveEnrollments = await db.select<{ id: string; school_year: string; start_date: string }[]>(
+        `SELECT id, school_year, start_date FROM enrollments 
+         WHERE status = 'Active' AND school_year != $1`,
+        [currentSchoolYear]
+    );
+
+    let updatedCount = 0;
+
+    for (const enrollment of oldActiveEnrollments) {
+        // Calculate a reasonable end date based on the school year
+        // Use the last day of the school year (June 30 of the end year)
+        const yearParts = enrollment.school_year.split('-');
+        const endYear = yearParts.length === 2 ? parseInt(yearParts[1]) : new Date().getFullYear();
+        const exitDate = `${endYear}-06-30`;
+
+        await db.execute(
+            `UPDATE enrollments SET status = 'Completed', end_date = $1 WHERE id = $2`,
+            [exitDate, enrollment.id]
+        );
+        updatedCount++;
+    }
+
+    return { updated: updatedCount, total: oldActiveEnrollments.length };
 };

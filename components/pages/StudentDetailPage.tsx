@@ -1,14 +1,16 @@
 import React, { useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { useStudentDetails, useUpdateStudent, useUpdateEnrollment, useCreateStudent } from '../../hooks/useStudents';
+import { useStudentDetails, useUpdateStudent, useUpdateEnrollment, useCreateStudent, useStudentEnrollments } from '../../hooks/useStudents';
 import { useSchoolYears } from '../../hooks/useSchoolYears';
 import { useSettings } from '../../hooks/useSettings';
 import { useHolidays } from '../../hooks/useAttendance';
 import { Student, StudentStatus, CustomFieldDefinition } from '../../types';
 import { calculateReleaseDateFromRemaining, getDaysAttended, toISODateString, formatDateForDisplay, getSchoolYearFromDate } from '../../services/dateUtils';
+import { mapDBHolidaysToHolidays, mapEnrollmentToUI, EnrollmentUI } from '../../services/mappers';
 import { StudentFormModal } from '../common/StudentFormModal';
 import { AttendanceCalendar } from '../common/AttendanceCalendar';
+import { EnrollmentHistorySection } from './EnrollmentHistorySection';
 import { PencilIcon, PrinterIcon, UserCircleIcon, PhoneIcon, ArrowPathIcon } from '../icons/Icons';
 import { DBStudent, DBEnrollment } from '../../db/queries';
 
@@ -56,6 +58,7 @@ export const StudentDetailPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showReenrollModal, setShowReenrollModal] = useState(false);
   const [projectionMethod, setProjectionMethod] = useState<'entryDate' | 'today'>('today');
+  const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<string | null>(null);
 
   const customFieldDefinitions = settings.customFieldDefinitions || [];
 
@@ -125,18 +128,57 @@ export const StudentDetailPage: React.FC = () => {
     return { activeEnrollment: active, uiStudent: student, relatedEnrollments: related, studentAttendance: att };
   }, [studentDetails]);
 
+  // Map all enrollments to UI format for the EnrollmentHistorySection
+  const enrollmentHistory: EnrollmentUI[] = useMemo(() => {
+    if (!studentDetails) return [];
+    const holidaysUIForMapper = mapDBHolidaysToHolidays(holidays);
+    return studentDetails.enrollments.map(enrollment =>
+      mapEnrollmentToUI(enrollment, holidaysUIForMapper)
+    );
+  }, [studentDetails, holidays]);
+
+  // Select the first enrollment by default if none selected
+  useMemo(() => {
+    if (enrollmentHistory.length > 0 && !selectedEnrollmentId) {
+      setSelectedEnrollmentId(enrollmentHistory[0].id);
+    }
+  }, [enrollmentHistory, selectedEnrollmentId]);
+
+  // Filter attendance based on selected enrollment
+  const filteredAttendance = useMemo(() => {
+    if (!studentDetails || !selectedEnrollmentId) return studentAttendance;
+
+    const selectedEnrollment = studentDetails.enrollments.find(e => e.id === selectedEnrollmentId);
+    if (!selectedEnrollment) return studentAttendance;
+
+    // Filter attendance to the selected enrollment's date range
+    return studentDetails.attendance.filter(a =>
+      a.date >= selectedEnrollment.start_date &&
+      (!selectedEnrollment.end_date || a.date <= selectedEnrollment.end_date)
+    );
+  }, [studentDetails, selectedEnrollmentId, studentAttendance]);
+
+  // Get entry date for the selected enrollment (for calendar display)
+
+  const selectedEnrollment = useMemo(() => {
+    if (!studentDetails || !selectedEnrollmentId) return activeEnrollment;
+    return studentDetails.enrollments.find(e => e.id === selectedEnrollmentId) || activeEnrollment;
+  }, [studentDetails, selectedEnrollmentId, activeEnrollment]);
+
   if (loading) return <div className="text-center p-8">Loading student data...</div>;
   if (!uiStudent || !activeEnrollment) return <div className="text-center p-8 text-rose-500 font-bold">Student not found.</div>;
 
-  const daysAttended = studentAttendance.filter(a => a.presence === 'Present').length;
+  const displayEntryDate = selectedEnrollment?.start_date || uiStudent.entryDate || '';
+
+  const daysAttended = filteredAttendance.filter(a => a.presence === 'Present').length;
   const creditDays = uiStudent.creditDays || 0;
   const daysRemaining = Math.max(0, uiStudent.daysAssigned - daysAttended - creditDays);
 
-  // For projection, we need holidays
-  function urlHolidaysToHolidays(hols: any[]) { return hols; }
+  // Convert DB holidays to UI format using centralized mapper
+  const holidaysUI = mapDBHolidaysToHolidays(holidays);
 
-  const projectionStartDate = projectionMethod === 'today' ? toISODateString(new Date()) : uiStudent.entryDate;
-  const projectedReleaseDateISO = calculateReleaseDateFromRemaining(daysRemaining, urlHolidaysToHolidays(holidays), projectionStartDate);
+  const projectionStartDate = projectionMethod === 'today' ? toISODateString(new Date()) : displayEntryDate;
+  const projectedReleaseDateISO = calculateReleaseDateFromRemaining(daysRemaining, holidaysUI, projectionStartDate);
   const projectedReleaseDate = projectedReleaseDateISO !== 'N/A' && projectedReleaseDateISO !== 'Completed' ? formatDateForDisplay(projectedReleaseDateISO) : projectedReleaseDateISO;
 
   const handlePrint = async () => {
@@ -188,6 +230,42 @@ export const StudentDetailPage: React.FC = () => {
     });
 
     setIsModalOpen(false);
+  };
+
+  const handleEditEnrollment = (enrollmentId: string, updates: Partial<import('../../services/mappers').EnrollmentUI>) => {
+    // Map UI fields to DB fields
+    const dbUpdates: Partial<DBEnrollment> = {};
+
+    if (updates.gradeLevel !== undefined) dbUpdates.grade_level = updates.gradeLevel;
+    if (updates.campus !== undefined) dbUpdates.campus = updates.campus;
+    if (updates.status !== undefined) dbUpdates.status = updates.status;
+    if (updates.startDate !== undefined) dbUpdates.start_date = updates.startDate;
+    if (updates.endDate !== undefined) dbUpdates.end_date = updates.endDate || null;
+    if (updates.daysAssigned !== undefined) dbUpdates.days_assigned = updates.daysAssigned;
+    if (updates.creditDays !== undefined) dbUpdates.credit_days = updates.creditDays;
+    if (updates.sped504 !== undefined) dbUpdates.sped_504 = updates.sped504;
+    if (updates.drgOffense !== undefined) dbUpdates.drg_offense = updates.drgOffense;
+    if (updates.comments !== undefined) dbUpdates.comments = updates.comments;
+
+    // Find the enrollment to get its current school_year
+    const enrollment = studentDetails?.enrollments.find(e => e.id === enrollmentId);
+    if (!enrollment) return;
+
+    // If the registration date changed, recalculate the school year
+    let schoolYearToUse = enrollment.school_year;
+    if (updates.startDate && updates.startDate !== enrollment.start_date) {
+      schoolYearToUse = getSchoolYearFromDate(new Date(updates.startDate + 'T12:00:00Z'), schoolYears);
+      dbUpdates.school_year = schoolYearToUse;
+    }
+
+    updateEnrollment({
+      id: enrollmentId,
+      updates: dbUpdates,
+      schoolYear: schoolYearToUse,
+      studentId: studentId || uiStudent?.id
+    });
+
+    toast.success('Enrollment updated successfully');
   };
 
   const customFields = customFieldDefinitions
@@ -263,7 +341,7 @@ export const StudentDetailPage: React.FC = () => {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Left Column - Calendar */}
         <div className="xl:col-span-2 space-y-6">
-          <AttendanceCalendar attendanceRecords={studentAttendance} holidays={holidays} entryDateStr={uiStudent.entryDate} registrationDateStr={uiStudent.registrationDate} />
+          <AttendanceCalendar attendanceRecords={filteredAttendance} holidays={holidays} entryDateStr={displayEntryDate} registrationDateStr={uiStudent.registrationDate} />
           <div className="bg-white dark:bg-slate-900 p-6 rounded-lg shadow-sm print:shadow-none print:border print:border-slate-200">
             <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">Comments</h3>
             <p className="text-slate-600 dark:text-slate-300 whitespace-pre-wrap text-sm">{uiStudent.comments || "No comments."}</p>
@@ -298,23 +376,14 @@ export const StudentDetailPage: React.FC = () => {
             </dl>
           </div>
 
-          {relatedEnrollments.length > 0 && (
-            <div className="bg-white dark:bg-slate-900 p-6 rounded-lg shadow-sm print:shadow-none print:border print:border-slate-200">
-              <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">Enrollment History</h3>
-              <div className="space-y-3">
-                {relatedEnrollments.map(enrollment => (
-                  <div key={enrollment.id} className="block p-3 rounded-md bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors border border-slate-200 dark:border-slate-700">
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="font-bold text-slate-700 dark:text-slate-200">{enrollment.school_year}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${enrollment.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-slate-200 text-slate-600'}`}>{enrollment.status}</span>
-                    </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                      Grade: {enrollment.grade_level} • Entry: {formatDateForDisplay(enrollment.start_date)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+          {/* Enrollment History - Interactive */}
+          {enrollmentHistory.length > 0 && (
+            <EnrollmentHistorySection
+              enrollments={enrollmentHistory}
+              selectedEnrollmentId={selectedEnrollmentId}
+              onSelectEnrollment={setSelectedEnrollmentId}
+              onEditEnrollment={handleEditEnrollment}
+            />
           )}
 
           <ContactInfoCard student={uiStudent} />
