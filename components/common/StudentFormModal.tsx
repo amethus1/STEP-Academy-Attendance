@@ -20,9 +20,18 @@ const studentSchema = z.object({
   lastName: z.string().min(1, 'Last Name is required'),
   studentNumber: z.string().min(1, 'Student ID is required'),
   daysAssigned: z.number().min(0, 'Days assigned must be positive'),
-  exitDate: z.string().optional().refine((val) => {
-    return true;
-  }),
+  status: z.nativeEnum(StudentStatus),
+  exitDate: z.string().optional(),
+  campus: z.string().optional(), // Optional or required? Let's say optional for now but maybe warn?
+  gradeLevel: z.string().optional(),
+}).superRefine((data, ctx) => {
+  if ((data.status === StudentStatus.Withdrawn || data.status === StudentStatus.Completed) && !data.exitDate) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Exit Date is required for inactive students",
+      path: ["exitDate"]
+    });
+  }
 });
 
 export const StudentFormModal: React.FC<StudentFormModalProps> = ({
@@ -188,23 +197,12 @@ export const StudentFormModal: React.FC<StudentFormModalProps> = ({
   const validate = () => {
     try {
       studentSchema.parse(formData);
-
-      const newErrors: Record<string, string> = {};
-      if ((formData.status === StudentStatus.Withdrawn || formData.status === StudentStatus.Completed) && !formData.exitDate) {
-        newErrors.exitDate = 'Exit Date is required for inactive students.';
-      }
-
-      if (Object.keys(newErrors).length > 0) {
-        setErrors(newErrors);
-        return false;
-      }
-
       setErrors({});
       return true;
     } catch (err) {
       if (err instanceof z.ZodError) {
         const fieldErrors: Record<string, string> = {};
-        err.errors.forEach(e => {
+        (err as any).errors.forEach((e: any) => {
           if (e.path[0]) fieldErrors[e.path[0] as string] = e.message;
         });
         setErrors(fieldErrors);

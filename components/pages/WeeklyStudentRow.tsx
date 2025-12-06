@@ -18,6 +18,9 @@ interface WeeklyStudentRowProps {
     onMarkAttendance: (studentId: string, date: string, current: Presence | undefined, target: Presence) => void;
     isHoliday: (date: string) => boolean;
     todayStr: string;
+
+    isSelected?: boolean;
+    onToggleSelection?: (id: string) => void;
 }
 
 // Helper moved here or imported? 
@@ -27,6 +30,8 @@ interface WeeklyStudentRowProps {
 
 const getCellValue = (student: ExtendedStudent, columnId: string) => {
     switch (columnId) {
+        case 'select':
+            return null; // Handled in component
         case 'lastName':
             return <Link to={`/student/${student.id}`} className="hover:underline text-brand-dark dark:text-brand-light">{student.lastName}</Link>;
         case 'firstName':
@@ -50,12 +55,14 @@ const getCellValue = (student: ExtendedStudent, columnId: string) => {
     }
 }
 
-export const WeeklyStudentRow = memo(({ student, displayDays, attendanceMap, fixedColumns, onMarkAttendance, isHoliday, todayStr }: WeeklyStudentRowProps) => {
+export const WeeklyStudentRow = memo(({ student, displayDays, attendanceMap, fixedColumns, onMarkAttendance, isHoliday, todayStr, isSelected, onToggleSelection }: WeeklyStudentRowProps) => {
     return (
-        <tr className="hover:bg-slate-50 dark:hover:bg-slate-800">
+        <tr className={`hover:bg-slate-50 dark:hover:bg-slate-800 ${isSelected ? 'bg-blue-50 dark:bg-blue-900/30' : ''}`}>
             {fixedColumns.map((col, index) => (
-                <td key={col.id} className={`py-3 px-4 whitespace-nowrap text-sm font-medium text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 ${col.isSticky ? `sticky z-10 ${index === 0 ? 'left-0' : 'left-32'}` : ''} ${col.widthClass ? col.widthClass : ''}`}>
-                    {getCellValue(student, col.id)}
+                <td key={col.id} className={`py-3 px-4 whitespace-nowrap text-sm font-medium text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 ${col.isSticky ? `sticky z-10 ${index === 0 ? 'left-0' : (index === 1 ? 'left-10' : 'left-40')}` : ''} ${col.widthClass ? col.widthClass : ''} ${isSelected ? '!bg-blue-50 dark:!bg-blue-900/30' : ''}`}>
+                    {col.id === 'select' ? (
+                        <input type="checkbox" checked={!!isSelected} onChange={() => onToggleSelection?.(student.id)} className="rounded border-slate-300 text-brand focus:ring-brand" />
+                    ) : getCellValue(student, col.id)}
                 </td>
             ))}
             {displayDays.map(day => {

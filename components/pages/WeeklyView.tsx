@@ -11,11 +11,14 @@ import { StatusBadge } from '../common/StatusBadge';
 import { AttendanceButton } from '../common/AttendanceButton';
 import { PageLoadingSkeleton } from '../common/SkeletonLoader';
 import { WeeklyStudentRow } from './WeeklyStudentRow';
+import { ChipFilter } from '../common/ChipFilter';
+import { BulkActionBar } from './BulkActionBar';
 
 type SortKey = keyof ExtendedStudent | string;
 const EMPTY_MAP = {};
 
 const fixedColumns: { id: SortKey; label: string; isSticky?: boolean; widthClass?: string }[] = [
+  { id: 'select', label: '', isSticky: true, widthClass: 'w-10' }, // Checkbox
   { id: 'lastName', label: 'Last Name', isSticky: true, widthClass: 'w-32' },
   { id: 'firstName', label: 'First Name', isSticky: true, widthClass: 'w-32' },
   { id: 'studentNumber', label: 'ID', widthClass: 'w-28' },
@@ -88,6 +91,26 @@ export const WeeklyView: React.FC = () => {
   );
   const spedOptions = ['All', 'None', 'SPED', '504'];
 
+  /* Selection State */
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+
+  const toggleSelection = useCallback((id: string) => {
+    setSelectedStudentIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleAll = useCallback(() => {
+    if (selectedStudentIds.size === studentsInYear.length) {
+      setSelectedStudentIds(new Set());
+    } else {
+      setSelectedStudentIds(new Set(studentsInYear.map(s => s.id)));
+    }
+  }, [selectedStudentIds.size, studentsInYear]);
+
   const holidaySet = useMemo(() => new Set(holidays.map(h => h.date)), [holidays]);
   const todayStr = toISODateString(new Date());
 
@@ -144,6 +167,23 @@ export const WeeklyView: React.FC = () => {
       presence: newPresence
     }]);
   }, [deleteAttendance, saveAttendance, studentsInYear]);
+
+  const handleBulkMark = useCallback((presence: Presence) => {
+    if (selectedStudentIds.size === 0) return;
+    const dateStr = todayStr; // Bulk mark for TODAY only
+
+    const records = Array.from(selectedStudentIds).map((studentId: string) => ({
+      id: crypto.randomUUID(),
+      enrollment_id: studentsInYear.find(s => s.id === studentId)?.enrollmentId!,
+      student_id: studentId,
+      date: dateStr,
+      presence: presence
+    }));
+
+    saveAttendance(records);
+    setSelectedStudentIds(new Set()); // Clear selection after action? Or keep it? keep is better for toggling back/forth.
+    // But clearing gives feedback "done". Let's clear properly.
+  }, [selectedStudentIds, studentsInYear, saveAttendance, todayStr]);
 
   const isHoliday = useCallback((date: string) => holidaySet.has(date), [holidaySet]);
 
@@ -202,26 +242,34 @@ export const WeeklyView: React.FC = () => {
           onChange={e => setSearchTerm(e.target.value)}
           className="w-full md:w-1/3 p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white"
         />
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium">Status:</label>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white">
-            <option value="All">All</option>
-            <option value={StudentStatus.Active}>Active</option>
-            <option value={StudentStatus.Completed}>Completed</option>
-            <option value={StudentStatus.Withdrawn}>Withdrawn</option>
-          </select>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium">Grade:</label>
-          <select value={gradeFilter} onChange={e => setGradeFilter(e.target.value)} className="p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white">
-            {gradeLevels.map(g => <option key={g} value={g}>{g}</option>)}
-          </select>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium">SPED/504:</label>
-          <select value={spedFilter} onChange={e => setSpedFilter(e.target.value)} className="p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white">
-            {spedOptions.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+        <div className="flex items-center gap-4 flex-wrap w-full md:w-auto">
+          {/* Filters */}
+          <ChipFilter
+            label="Status"
+            selectedValue={statusFilter}
+            onChange={(val) => setStatusFilter(val as any)}
+            options={[
+              { label: 'Active', value: StudentStatus.Active },
+              { label: 'Completed', value: StudentStatus.Completed },
+              { label: 'Withdrawn', value: StudentStatus.Withdrawn }
+            ]}
+          />
+          <ChipFilter
+            label="Grade"
+            selectedValue={gradeFilter}
+            onChange={setGradeFilter}
+            options={gradeLevels.filter(g => g !== 'All').map(g => ({ label: g, value: g }))}
+          />
+          <ChipFilter
+            label="SPED/504"
+            selectedValue={spedFilter}
+            onChange={setSpedFilter}
+            options={[
+              { label: 'None', value: 'None' },
+              { label: 'SPED', value: 'SPED' },
+              { label: '504', value: '504' }
+            ]}
+          />
         </div>
       </div>
 
@@ -232,10 +280,16 @@ export const WeeklyView: React.FC = () => {
               {fixedColumns.map((col, index) => (
                 <th
                   key={col.id}
-                  onClick={() => requestSort(col.id)}
-                  className={`py-3 px-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider cursor-pointer whitespace-nowrap ${col.isSticky ? `sticky z-20 bg-slate-50 dark:bg-slate-800 ${index === 0 ? 'left-0' : 'left-32'}` : ''} ${col.widthClass ? col.widthClass : ''}`}
+                  onClick={() => col.id !== 'select' && requestSort(col.id)}
+                  className={`py-3 px-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap ${col.isSticky ? `sticky z-20 bg-slate-50 dark:bg-slate-800 ${index === 0 ? 'left-0' : 'left-10'}` : ''} ${col.widthClass ? col.widthClass : ''} ${col.id !== 'select' ? 'cursor-pointer' : ''}`}
                 >
-                  {col.label} {sortConfig.key === col.id ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
+                  {col.id === 'select' ? (
+                    <input type="checkbox" checked={studentsInYear.length > 0 && selectedStudentIds.size === studentsInYear.length} onChange={toggleAll} className="rounded border-slate-300 text-brand focus:ring-brand" />
+                  ) : (
+                    <>
+                      {col.label} {sortConfig.key === col.id ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
+                    </>
+                  )}
                 </th>
               ))}
               {displayDays.map(day => (
@@ -258,12 +312,20 @@ export const WeeklyView: React.FC = () => {
                 onMarkAttendance={handleMarkAttendance}
                 isHoliday={isHoliday}
                 todayStr={todayStr}
+                isSelected={selectedStudentIds.has(student.id)}
+                onToggleSelection={toggleSelection}
               />
             ))}
           </tbody>
         </table>
         {sortedAndFilteredStudents.length === 0 && <p className="text-center p-8 text-slate-500 dark:text-slate-400">No students match the current filter.</p>}
       </div>
+
+      <BulkActionBar
+        selectedCount={selectedStudentIds.size}
+        onClearSelection={() => setSelectedStudentIds(new Set())}
+        onMarkAll={handleBulkMark}
+      />
     </div>
   );
 };

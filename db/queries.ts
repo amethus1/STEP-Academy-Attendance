@@ -47,6 +47,16 @@ export interface DBHoliday {
     school_year: string | null;
 }
 
+export interface DBAuditLog {
+    id: string;
+    action: string;
+    entity_type: string;
+    entity_id: string | null;
+    details: string | null;
+    user_id: string | null;
+    timestamp: string;
+}
+
 // --- Composite Types for UI ---
 
 export interface StudentWithEnrollment extends DBStudent, DBEnrollment {
@@ -257,6 +267,8 @@ export const createStudent = async (student: DBStudent, enrollment: DBEnrollment
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
             [enrollment.id, enrollment.student_id, enrollment.school_year, enrollment.start_date, enrollment.end_date, enrollment.grade_level, enrollment.campus, enrollment.status, enrollment.sped_504, enrollment.drg_offense, enrollment.days_assigned, enrollment.credit_days, enrollment.comments]
         );
+
+        await createAuditLog('CREATE_STUDENT', 'Student', student.id, `Created ${student.first_name} ${student.last_name}`);
     } catch (e) {
         console.error("DB Error in createStudent:", e);
         throw e;
@@ -269,6 +281,7 @@ export const updateStudent = async (student: DBStudent): Promise<void> => {
         `UPDATE students SET student_number=$2, first_name=$3, last_name=$4, guardian_name=$5, guardian_phone=$6, emergency_contact_name=$7, emergency_contact_phone=$8, photo_url=$9, custom_fields=$10 WHERE id=$1`,
         [student.id, student.student_number, student.first_name, student.last_name, student.guardian_name, student.guardian_phone, student.emergency_contact_name, student.emergency_contact_phone, student.photo_url, student.custom_fields]
     );
+    await createAuditLog('UPDATE_STUDENT', 'Student', student.id, `Updated profile for ${student.first_name} ${student.last_name}`);
 };
 
 export const deleteStudent = async (studentId: string): Promise<void> => {
@@ -283,6 +296,7 @@ export const deleteStudent = async (studentId: string): Promise<void> => {
         await db.execute("DELETE FROM enrollments WHERE student_id = $1", [studentId]);
         // Delete student
         await db.execute("DELETE FROM students WHERE id = $1", [studentId]);
+        await createAuditLog('DELETE_STUDENT', 'Student', studentId, 'Deleted student and related records');
     } catch (e) {
         console.error("Failed to delete student:", e);
         throw e;
@@ -400,6 +414,26 @@ export const deleteHoliday = async (date: string) => {
     const db = await getDb();
     await db.execute("DELETE FROM holidays WHERE date = $1", [date]);
 }
+
+// --- Audit Logging ---
+
+export const createAuditLog = async (action: string, entityType: string, entityId: string | null, details: string | null) => {
+    const db = await getDb();
+    // Non-blocking log? For now await it to ensure order/success? 
+    // In critical path, maybe fire and forget? 
+    // Let's await to be safe for now, can optimize later.
+    try {
+        await db.execute(
+            `INSERT INTO audit_logs (id, action, entity_type, entity_id, details, user_id, timestamp) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [crypto.randomUUID(), action, entityType, entityId, details, 'system', new Date().toISOString()]
+        );
+    } catch (e) {
+        console.error("Failed to write audit log:", e);
+        // Don't throw, failing to log shouldn't crash the app action? 
+        // Or should it? For strict audit, yes. For this app, maybe warn.
+    }
+};
 
 // --- Import / Export ---
 
