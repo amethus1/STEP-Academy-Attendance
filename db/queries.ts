@@ -55,71 +55,157 @@ export interface StudentWithEnrollment extends DBStudent, DBEnrollment {
     days_attended: number;
 }
 
+export interface StudentSearchOptions {
+    schoolYear: string;
+    searchTerm?: string;
+    status?: string;
+    campus?: string;
+    gradeLevel?: string;
+    sped504?: string;
+    sortKey?: string;
+    sortDirection?: 'asc' | 'desc';
+    limit?: number;
+    offset?: number;
+}
+
 // --- Queries ---
 
-export const getStudentsByYear = async (schoolYear: string): Promise<StudentWithEnrollment[]> => {
+export const searchStudents = async (options: StudentSearchOptions): Promise<StudentWithEnrollment[]> => {
     const db = await getDb();
+    const { schoolYear, searchTerm, status, campus, gradeLevel, sped504, sortKey = 'lastName', sortDirection = 'asc', limit, offset } = options;
 
-    // If schoolYear is 'All', just return everyone
-    if (schoolYear === 'All') {
-        const query = `
-        SELECT 
-          s.id as studentId, s.student_number, s.first_name, s.last_name, s.dob, 
-          s.guardian_name, s.guardian_phone, s.emergency_contact_name, s.emergency_contact_phone, s.photo_url, s.custom_fields,
-          e.id as enrollmentId, e.school_year, e.start_date, e.end_date, e.grade_level, e.campus, e.status,
-          e.sped_504, e.drg_offense, e.days_assigned, e.credit_days, e.comments,
-          (SELECT COUNT(*) FROM attendance a WHERE a.enrollment_id = e.id AND a.presence = 'Present') as days_attended
-        FROM students s
-        JOIN enrollments e ON s.id = e.student_id
-        ORDER BY s.last_name, s.first_name, e.school_year DESC
-        `;
-        return await db.select(query);
+    let conditions: string[] = [];
+    let params: any[] = [];
+    let paramIndex = 1;
+
+    // 1. School Year Logic
+    if (schoolYear !== 'All') {
+        // Check definition
+        const definedYear = await db.select<{ start_date: string, end_date: string }[]>(
+            "SELECT start_date, end_date FROM school_years WHERE name = $1",
+            [schoolYear]
+        );
+
+        if (definedYear.length > 0) {
+            conditions.push(`(e.school_year = $${paramIndex} OR (e.start_date >= $${paramIndex + 1} AND e.start_date <= $${paramIndex + 2}))`);
+            params.push(schoolYear, definedYear[0].start_date, definedYear[0].end_date);
+            paramIndex += 3;
+        } else {
+            conditions.push(`e.school_year = $${paramIndex}`);
+            params.push(schoolYear);
+            paramIndex++;
+        }
     }
 
-    // Check if this school year is a defined year with date ranges
-    const definedYear = await db.select<{ start_date: string, end_date: string }[]>(
-        "SELECT start_date, end_date FROM school_years WHERE name = $1",
-        [schoolYear]
-    );
-
-    let query: string;
-    let params: any[];
-
-    if (definedYear.length > 0) {
-        // Match by either: school_year name OR start_date within the defined range
-        query = `
-        SELECT 
-          s.id as studentId, s.student_number, s.first_name, s.last_name, s.dob, 
-          s.guardian_name, s.guardian_phone, s.emergency_contact_name, s.emergency_contact_phone, s.photo_url, s.custom_fields,
-          e.id as enrollmentId, e.school_year, e.start_date, e.end_date, e.grade_level, e.campus, e.status,
-          e.sped_504, e.drg_offense, e.days_assigned, e.credit_days, e.comments,
-          (SELECT COUNT(*) FROM attendance a WHERE a.enrollment_id = e.id AND a.presence = 'Present') as days_attended
-        FROM students s
-        JOIN enrollments e ON s.id = e.student_id
-        WHERE e.school_year = $1 
-           OR (e.start_date >= $2 AND e.start_date <= $3)
-        GROUP BY e.id
-        ORDER BY s.last_name, s.first_name, e.school_year DESC
-        `;
-        params = [schoolYear, definedYear[0].start_date, definedYear[0].end_date];
-    } else {
-        // No defined year, just match by name
-        query = `
-        SELECT 
-          s.id as studentId, s.student_number, s.first_name, s.last_name, s.dob, 
-          s.guardian_name, s.guardian_phone, s.emergency_contact_name, s.emergency_contact_phone, s.photo_url, s.custom_fields,
-          e.id as enrollmentId, e.school_year, e.start_date, e.end_date, e.grade_level, e.campus, e.status,
-          e.sped_504, e.drg_offense, e.days_assigned, e.credit_days, e.comments,
-          (SELECT COUNT(*) FROM attendance a WHERE a.enrollment_id = e.id AND a.presence = 'Present') as days_attended
-        FROM students s
-        JOIN enrollments e ON s.id = e.student_id
-        WHERE e.school_year = $1
-        ORDER BY s.last_name, s.first_name, e.school_year DESC
-        `;
-        params = [schoolYear];
+    // 2. Filters
+    if (status && status !== 'All') {
+        conditions.push(`e.status = $${paramIndex}`);
+        params.push(status);
+        paramIndex++;
     }
+    if (campus && campus !== 'All') {
+        conditions.push(`e.campus = $${paramIndex}`);
+        params.push(campus);
+        paramIndex++;
+    }
+    if (gradeLevel && gradeLevel !== 'All') {
+        conditions.push(`e.grade_level = $${paramIndex}`);
+        params.push(gradeLevel);
+        paramIndex++;
+    }
+    if (sped504 && sped504 !== 'All') {
+        if (sped504 === 'None') {
+            // Handle 'None' explicitly if needed, or assume it matches literal string 'None' stored in DB?
+            // Based on schema it seems to allow null or string. UI usually uses 'None'.
+            conditions.push(`(e.sped_504 IS NULL OR e.sped_504 = 'None' OR e.sped_504 = '')`);
+        } else {
+            conditions.push(`e.sped_504 = $${paramIndex}`);
+            params.push(sped504);
+            paramIndex++;
+        }
+    }
+
+    // 3. Search Term
+    if (searchTerm) {
+        const term = `%${searchTerm}%`;
+        conditions.push(`(s.first_name LIKE $${paramIndex} OR s.last_name LIKE $${paramIndex} OR s.student_number LIKE $${paramIndex})`);
+        params.push(term, term, term); // Careful: parameter reuse in Tauri SQL?
+        // Tauri SQL plugin usually binds positionally. 
+        // So I need to push 'term' 3 times? 
+        // Or can I reuse $N? Raw sqlite supports reused indexes? 
+        // safest is strictly positional. But wait, `s.first_name LIKE $N`...
+        // Let's increment paramIndex only once if we use $N multiple times? 
+        // Or if the driver expects strictly unique placeholders...
+        // Let's assume standard SQLite parameter binding: $1, $2.. can be reused.
+        // Actually typically client libs bind array to positions.
+        // If I use $X, $X, $X, and params has 'term' at index X-1.
+        // Let's try reusing the index.
+        // But wait, the params array must match the highest index? Or the number of placeholders?
+        // In many drivers (like `pg`), if I use $1 three times, I only provide 1 value in array.
+        // Let's assume that behavior.
+        // BUT if Tauri plugin uses prepared statements, it might be strict.
+        // Let's assume reusing $N works with a single value in the array at that index.
+        // Wait, params[paramIndex-1] needs to be the value.
+        // So params list length must be >= paramIndex.
+        // If I use $paramIndex 3 times, I push the value ONCE.
+
+        // Let's verify parameter reuse support in generic SQLite/Tauri.
+        // If not sure, safely: $1, $2, $3 with 3 values.
+        // Let's use separate indices to be safe.
+        // paramIndex, paramIndex+1, paramIndex+2
+
+        conditions.pop(); // Remove the optimized one I mentally added
+        conditions.push(`(s.first_name LIKE $${paramIndex} OR s.last_name LIKE $${paramIndex + 1} OR s.student_number LIKE $${paramIndex + 2})`);
+        params.push(term, term, term);
+        paramIndex += 3;
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    // 4. Sorting mapping
+    const sortMap: Record<string, string> = {
+        lastName: 's.last_name',
+        firstName: 's.first_name',
+        studentNumber: 's.student_number',
+        gradeLevel: 'e.grade_level',
+        campus: 'e.campus',
+        status: 'e.status',
+        daysAttended: 'days_attended', // alias
+        daysAssigned: 'e.days_assigned',
+        entryDate: 'e.start_date' // sorting by start_date for entry
+    };
+
+    const dbSortKey = sortMap[sortKey] || 's.last_name';
+    // Ensure direction is safe
+    const dir = sortDirection === 'desc' ? 'DESC' : 'ASC';
+
+    // Fallback secondary sort
+    const orderBy = `ORDER BY ${dbSortKey} ${dir}, s.last_name ASC, s.first_name ASC`;
+
+    // 5. Pagination
+    const limitClause = limit ? `LIMIT ${limit}` : '';
+    const offsetClause = offset ? `OFFSET ${offset}` : '';
+
+    const query = `
+        SELECT 
+          s.id as studentId, s.student_number, s.first_name, s.last_name, s.dob, 
+          s.guardian_name, s.guardian_phone, s.emergency_contact_name, s.emergency_contact_phone, s.photo_url, s.custom_fields,
+          e.id as enrollmentId, e.school_year, e.start_date, e.end_date, e.grade_level, e.campus, e.status,
+          e.sped_504, e.drg_offense, e.days_assigned, e.credit_days, e.comments,
+          (SELECT COUNT(*) FROM attendance a WHERE a.enrollment_id = e.id AND a.presence = 'Present') as days_attended
+        FROM students s
+        JOIN enrollments e ON s.id = e.student_id
+        ${whereClause}
+        ${orderBy}
+        ${limitClause} ${offsetClause}
+    `;
 
     return await db.select(query, params);
+};
+
+export const getStudentsByYear = async (schoolYear: string): Promise<StudentWithEnrollment[]> => {
+    // Legacy wrapper for backward compatibility or simple usage
+    return searchStudents({ schoolYear });
 };
 
 export const getStudentDetails = async (studentId: string) => {
@@ -145,6 +231,7 @@ export const createStudent = async (student: DBStudent, enrollment: DBEnrollment
     // Manual Transaction (Tauri plugin doesn't strongly expose tx objects yet in v2 safely across awaits, 
     // but executing BEGIN/COMMIT works if connection is locked (which it isn't always in pool).
     // For now, sequentially execute. If fail, we have orphan risk but low in single-user app.
+    // For now, sequentially execute.
 
     try {
         // 1. Insert Profile (IGNORE if exists? Or Update? Assume new student means new profile for now)
@@ -204,10 +291,6 @@ export const deleteStudent = async (studentId: string): Promise<void> => {
 
 export const updateStudentEnrollment = async (enrollmentId: string, updates: Partial<DBEnrollment>) => {
     const db = await getDb();
-    // Dynamic update builder would be nice, but for now hardcode common updates or just one-by-one
-    // Let's implement full update for simplicity of 'Save'
-    // Actually, UI usually sends whole object.
-
     // Construct SET clause
     const keys = Object.keys(updates).filter(k => k !== 'id' && k !== 'student_id');
     if (keys.length === 0) return;

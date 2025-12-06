@@ -7,9 +7,11 @@ import {
     getStudentDetails,
     updateStudent,
     deleteStudent,
+    searchStudents,
     DBStudent,
     DBEnrollment,
-    StudentWithEnrollment
+    StudentWithEnrollment,
+    StudentSearchOptions
 } from '../db/queries';
 
 export const useSchoolYears = () => {
@@ -20,12 +22,15 @@ export const useSchoolYears = () => {
     });
 };
 
-export const useStudents = (schoolYear: string) => {
+export const useStudents = (options: string | StudentSearchOptions) => {
+    const isLegacy = typeof options === 'string';
+    const schoolYear = isLegacy ? options : options.schoolYear;
+
     return useQuery({
-        queryKey: ['students', schoolYear],
-        queryFn: () => getStudentsByYear(schoolYear),
+        queryKey: isLegacy ? ['students', schoolYear] : ['students', schoolYear, options],
+        queryFn: () => isLegacy ? searchStudents({ schoolYear: options }) : searchStudents(options),
         enabled: !!schoolYear,
-        staleTime: 30 * 1000, // 30 seconds - data stays fresh
+        staleTime: 30 * 1000, // 30 seconds
     });
 };
 

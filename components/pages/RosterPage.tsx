@@ -6,7 +6,8 @@ import { useHolidays } from '../../hooks/useAttendance';
 import { useSettings } from '../../hooks/useSettings';
 import { Student, StudentStatus, CustomFieldDefinition } from '../../types';
 import { DBStudent, DBEnrollment } from '../../db/queries';
-import { calculateReleaseDateFromRemaining, toISODateString, formatDateForDisplay } from '../../services/dateUtils';
+import { toISODateString, formatDateForDisplay } from '../../services/dateUtils';
+import { mapDBStudentToUI, ExtendedStudent } from '../../services/mappers';
 import { exportToCsv } from '../../services/csvService';
 import { StudentFormModal } from '../common/StudentFormModal';
 import { StatusBadge } from '../common/StatusBadge';
@@ -15,12 +16,7 @@ import { DocumentArrowDownIcon } from '../icons/Icons';
 
 type SortKey = keyof ExtendedStudent | string;
 type SortDirection = 'asc' | 'desc';
-type ExtendedStudent = Student & {
-  enrollmentId: string;
-  daysAttended: number;
-  daysRemaining: number;
-  projectedReleaseDate: string;
-};
+// Local ExtendedStudent definition moved to mappers.ts
 type ColumnDefinition = { id: SortKey; label: string; isCustom: boolean };
 
 const ColumnConfigModal: React.FC<{
@@ -158,16 +154,33 @@ export const RosterPage: React.FC = () => {
   const schoolYearNames = useMemo(() => schoolYearsData.map(y => y.name), [schoolYearsData]);
   const allSchoolYears = useMemo(() => ['All', ...schoolYearNames], [schoolYearNames]);
   const [selectedSchoolYear, setSelectedSchoolYear] = useState<string>(schoolYearNames[0] || '2024-2025');
-  const { data: rawStudents, isLoading: studentsLoading } = useStudents(selectedSchoolYear);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearchTerm(searchTerm), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  const [filters, setFilters] = useState(initialFilters);
+  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'lastName', direction: 'asc' });
+  const [projectionMethod, setProjectionMethod] = useState<'today' | 'entryDate'>('today');
+
+  const { data: rawStudents, isLoading: studentsLoading } = useStudents({
+    schoolYear: selectedSchoolYear,
+    searchTerm: debouncedSearchTerm,
+    status: filters.status,
+    campus: filters.campus,
+    gradeLevel: filters.gradeLevel,
+    sped504: filters.sped504,
+    // We handle sorting client-side for now to support custom fields
+  });
   const { data: holidays = [] } = useHolidays();
 
   // Helper to match types
   function urlHolidaysToHolidays(hols: any[]) { return hols; }
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filters, setFilters] = useState(initialFilters);
-  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'lastName', direction: 'asc' });
-  const [projectionMethod, setProjectionMethod] = useState<'today' | 'entryDate'>('today');
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
 
@@ -221,54 +234,8 @@ export const RosterPage: React.FC = () => {
   const studentData = useMemo(() => {
     if (!rawStudents) return [];
     return rawStudents.map(s => {
-      // Parse custom fields
-      let customFields = {};
-      try {
-        customFields = s.custom_fields ? JSON.parse(s.custom_fields) : {};
-      } catch (e) {
-        console.error("Failed to parse custom fields", e);
-      }
-
-      // Map DB Student to UI Student (Extended)
-      const daysAttended = s.days_attended || 0;
-      const creditDays = s.credit_days || 0;
-      const daysAssigned = s.days_assigned || 45;
-
-      const daysRemaining = Math.max(0, daysAssigned - daysAttended - creditDays);
-      const projectionStartDate = projectionMethod === 'today' ? toISODateString(new Date()) : s.start_date; // Fixed: uses start_date from DBEnrollment
-
-      // Map snake_case to camelCase for UI compatibility and ExtendedStudent type
-      const uiStudent: any = {
-        id: s.studentId,
-        enrollmentId: s.enrollmentId,
-        firstName: s.first_name,
-        lastName: s.last_name,
-        studentNumber: s.student_number,
-        gradeLevel: s.grade_level,
-        campus: s.campus,
-        status: s.status as StudentStatus,
-        entryDate: s.start_date,
-        registrationDate: s.start_date,
-        exitDate: s.end_date,
-        creditDays: s.credit_days,
-        daysAssigned: s.days_assigned,
-        sped504: s.sped_504,
-        drgOffense: s.drg_offense,
-        comments: s.comments,
-        customFields: customFields,
-        guardianName: s.guardian_name,
-        guardianPhone: s.guardian_phone,
-        daysAttended,
-        daysRemaining
-      };
-
-      const projectedReleaseDate = calculateReleaseDateFromRemaining(
-        daysRemaining,
-        urlHolidaysToHolidays(holidays),
-        projectionStartDate
-      );
-
-      return { ...uiStudent, projectedReleaseDate };
+      const projectionStart = projectionMethod === 'today' ? undefined : s.start_date;
+      return mapDBStudentToUI(s, urlHolidaysToHolidays(holidays), projectionStart);
     });
   }, [rawStudents, holidays, projectionMethod]);
 
@@ -285,18 +252,23 @@ export const RosterPage: React.FC = () => {
 
 
   const sortedAndFilteredStudents = useMemo(() => {
-    let filtered = (studentData || []).filter(s => {
-      const searchMatch = `${s.firstName} ${s.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (s.studentNumber || s.id).toLowerCase().includes(searchTerm.toLowerCase());
+    // Server-side filtering handles most things. 
+    // We still need to filter by Entry Date Range locally if not supported by API yet (API supports it? No, searchStudents has hardcoded logic for specific year definitions but not arbitrary ranges passed as args yet)
+    // Actually searchStudents in queries.ts DOES NOT accept arbitrary entryDateFrom/To yet.
+    // So we must keep date filtering client-side.
+    // Also need to support "All matches" which we get from server.
 
-      const statusMatch = filters.status === 'All' || s.status === filters.status;
-      const campusMatch = filters.campus === 'All' || s.campus === filters.campus;
-      const gradeMatch = filters.gradeLevel === 'All' || s.gradeLevel === filters.gradeLevel;
-      const spedMatch = filters.sped504 === 'All' || s.sped504 === filters.sped504;
+    let filtered = (studentData || []).filter(s => {
+      // Search, status, campus, grade, sped are server-side now.
+      // But we double check locally? No need if API is trusted. 
+      // EXCEPT: The user might have typed faster than debounce? 
+      // The `studentData` is derived from `rawStudents` which comes from `useStudents` dependent on `debouncedSearchTerm`.
+      // So `studentData` IS already filtered by debounce term.
+
       const entryDateFromMatch = !filters.entryDateFrom || s.entryDate >= filters.entryDateFrom;
       const entryDateToMatch = !filters.entryDateTo || s.entryDate <= filters.entryDateTo;
 
-      return searchMatch && statusMatch && campusMatch && gradeMatch && spedMatch && entryDateFromMatch && entryDateToMatch;
+      return entryDateFromMatch && entryDateToMatch;
     });
 
     filtered.sort((a, b) => {
@@ -325,7 +297,7 @@ export const RosterPage: React.FC = () => {
     });
 
     return filtered;
-  }, [studentData, searchTerm, sortConfig, customFieldDefinitions, filters]);
+  }, [studentData, sortConfig, customFieldDefinitions, filters.entryDateFrom, filters.entryDateTo]);
 
   const requestSort = (key: SortKey) => {
     let direction: SortDirection = 'asc';

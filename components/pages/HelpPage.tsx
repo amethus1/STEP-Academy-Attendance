@@ -3,7 +3,7 @@ import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { toast } from 'sonner';
 
-const APP_VERSION = "1.0.0"; // Should match tauri.conf.json
+const APP_VERSION = "1.0.3"; // Should match tauri.conf.json
 
 export const HelpPage: React.FC = () => {
   const [checking, setChecking] = useState(false);

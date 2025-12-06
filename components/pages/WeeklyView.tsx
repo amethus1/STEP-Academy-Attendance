@@ -1,17 +1,19 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useStudents, useCreateStudent } from '../../hooks/useStudents';
 import { useAttendanceRange, useSaveAttendance, useDeleteAttendance, useHolidays } from '../../hooks/useAttendance';
 import { useSchoolYears } from '../../hooks/useSchoolYears';
 import { useSettings } from '../../hooks/useSettings';
 import { Presence, Student, StudentStatus } from '../../types';
-import { toISODateString, getDaysAttended, formatDateForDisplay, getStartOfWeek, getWeekDays, calculateReleaseDateFromRemaining, getSchoolYearFromDate } from '../../services/dateUtils';
+import { ExtendedStudent, mapDBStudentToUI } from '../../services/mappers';
+import { toISODateString, getDaysAttended, formatDateForDisplay, getStartOfWeek, getWeekDays, getSchoolYearFromDate } from '../../services/dateUtils';
 import { StatusBadge } from '../common/StatusBadge';
 import { AttendanceButton } from '../common/AttendanceButton';
 import { PageLoadingSkeleton } from '../common/SkeletonLoader';
+import { WeeklyStudentRow } from './WeeklyStudentRow';
 
-type WeeklyStudent = Student & { daysRemaining: number; projectedReleaseDate: string; };
-type SortKey = keyof WeeklyStudent | string;
+type SortKey = keyof ExtendedStudent | string;
+const EMPTY_MAP = {};
 
 const fixedColumns: { id: SortKey; label: string; isSticky?: boolean; widthClass?: string }[] = [
   { id: 'lastName', label: 'Last Name', isSticky: true, widthClass: 'w-32' },
@@ -58,39 +60,18 @@ export const WeeklyView: React.FC = () => {
 
   const { data: attendanceRecords = [], isLoading: attendanceLoading } = useAttendanceRange(rangeStartStr, rangeEndStr);
 
+  const attendanceByStudent = useMemo(() => {
+    const map: Record<string, Record<string, Presence>> = {};
+    for (const record of attendanceRecords) {
+      if (!map[record.student_id]) map[record.student_id] = {};
+      map[record.student_id][record.date] = record.presence as Presence;
+    }
+    return map;
+  }, [attendanceRecords]);
+
   const studentsInYear = useMemo(() => {
     if (!rawStudents) return [];
-    return rawStudents.map(s => {
-      // Map to student interface expected by UI
-      const daysAttended = s.days_attended || 0;
-      const creditDays = s.credit_days || 0;
-      const daysRemaining = Math.max(0, s.days_assigned - daysAttended - creditDays);
-
-      const entryDate = s.start_date;
-      const projectedReleaseDate = calculateReleaseDateFromRemaining(
-        daysRemaining,
-        urlHolidaysToHolidays(holidays),
-        toISODateString(new Date())
-      );
-
-      return {
-        ...s,
-        id: s.studentId,
-        studentNumber: s.student_number,
-        firstName: s.first_name,
-        lastName: s.last_name,
-        gradeLevel: s.grade_level,
-        sped504: s.sped_504,
-        status: s.status as StudentStatus,
-        entryDate,
-        daysRemaining,
-        projectedReleaseDate,
-        daysAssigned: s.days_assigned,
-        creditDays: s.credit_days,
-        enrollmentId: s.enrollmentId,
-        registrationDate: s.start_date, // approximate
-      };
-    });
+    return rawStudents.map(s => mapDBStudentToUI(s, urlHolidaysToHolidays(holidays)));
   }, [rawStudents, holidays]);
 
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'lastName', direction: 'asc' });
@@ -139,15 +120,15 @@ export const WeeklyView: React.FC = () => {
     });
 
     return [...filtered].sort((a, b) => {
-      const aVal = a[sortConfig.key as keyof WeeklyStudent];
-      const bVal = b[sortConfig.key as keyof WeeklyStudent];
+      const aVal = a[sortConfig.key as keyof ExtendedStudent];
+      const bVal = b[sortConfig.key as keyof ExtendedStudent];
       if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
       if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
       return 0;
     });
   }, [studentsInYear, statusFilter, gradeFilter, spedFilter, sortConfig, searchTerm]);
 
-  const handleMarkAttendance = (studentId: string, date: string, currentPresence: Presence | undefined, targetPresence: Presence) => {
+  const handleMarkAttendance = useCallback((studentId: string, date: string, currentPresence: Presence | undefined, targetPresence: Presence) => {
     const newPresence = currentPresence === targetPresence ? null : targetPresence;
 
     if (newPresence === null) {
@@ -162,7 +143,9 @@ export const WeeklyView: React.FC = () => {
       date: date,
       presence: newPresence
     }]);
-  };
+  }, [deleteAttendance, saveAttendance, studentsInYear]);
+
+  const isHoliday = useCallback((date: string) => holidaySet.has(date), [holidaySet]);
 
   const requestSort = (key: SortKey) => {
     let direction: 'asc' | 'desc' = 'asc';
@@ -172,7 +155,7 @@ export const WeeklyView: React.FC = () => {
     setSortConfig({ key, direction });
   };
 
-  const getCellValue = (student: WeeklyStudent, columnId: SortKey) => {
+  const getCellValue = (student: ExtendedStudent, columnId: SortKey) => {
     switch (columnId) {
       case 'lastName':
         return <Link to={`/student/${student.id}`} className="hover:underline text-brand-dark dark:text-brand-light">{student.lastName}</Link>;
@@ -193,7 +176,7 @@ export const WeeklyView: React.FC = () => {
         return dateVal && dateVal !== 'N/A' && dateVal !== 'Completed' ? formatDateForDisplay(dateVal as string) : dateVal;
       }
       default:
-        return student[columnId as keyof WeeklyStudent] as string | number;
+        return student[columnId as keyof ExtendedStudent] as string | number;
     }
   }
 
@@ -265,50 +248,18 @@ export const WeeklyView: React.FC = () => {
           </thead>
           <tbody className="bg-white dark:bg-slate-900 divide-y divide-slate-200 dark:divide-slate-700">
             {sortedAndFilteredStudents.map(student => (
-              <tr key={student.id} className="hover:bg-slate-50 dark:hover:bg-slate-800">
-                {fixedColumns.map((col, index) => (
-                  <td key={col.id} className={`py-3 px-4 whitespace-nowrap text-sm font-medium text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 ${col.isSticky ? `sticky z-10 ${index === 0 ? 'left-0' : 'left-32'}` : ''} ${col.widthClass ? col.widthClass : ''}`}>
-                    {getCellValue(student, col.id)}
-                  </td>
-                ))}
-                {displayDays.map(day => {
-                  const dateStr = toISODateString(day);
-                  // Find attendance record in fetched range
-                  const attendanceRecord = attendanceRecords.find(a => a.student_id === student.id && a.date === dateStr);
-
-                  const isFuture = dateStr > todayStr;
-                  const isBeforeEntry = dateStr < student.entryDate;
-                  const isHoliday = holidaySet.has(dateStr);
-                  const isDisabled = student.status !== StudentStatus.Active || isFuture || isBeforeEntry || isHoliday;
-                  const isRegistrationDay = student.registrationDate === dateStr;
-
-                  if (isHoliday) {
-                    return <td key={dateStr} className="py-3 px-4 text-center bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 text-xs font-bold">HOLIDAY</td>
-                  }
-
-                  return (
-                    <td key={dateStr} className="py-3 px-4 text-center relative">
-                      {isRegistrationDay && <span className="absolute top-1 right-1 text-xs font-bold text-purple-600 dark:text-purple-400" title={`Registered on ${formatDateForDisplay(dateStr)}`}>R</span>}
-                      {isDisabled ? <div className="h-8 w-16" /> : (
-                        <div className="flex justify-center items-center gap-2">
-                          <AttendanceButton
-                            currentPresence={attendanceRecord?.presence as Presence}
-                            targetPresence={Presence.Present}
-                            onClick={() => handleMarkAttendance(student.id, dateStr, attendanceRecord?.presence as Presence, Presence.Present)}
-                          />
-                          <AttendanceButton
-                            currentPresence={attendanceRecord?.presence as Presence}
-                            targetPresence={Presence.Absent}
-                            onClick={() => handleMarkAttendance(student.id, dateStr, attendanceRecord?.presence as Presence, Presence.Absent)}
-                          />
-                        </div>
-                      )}
-                    </td>
-                  )
-                })}
-              </tr>
-            )
-            )}
+              <WeeklyStudentRow
+                key={student.id}
+                student={student}
+                displayDays={displayDays}
+                attendanceMap={attendanceByStudent[student.id] || EMPTY_MAP}
+                fixedColumns={fixedColumns}
+                sortConfig={sortConfig}
+                onMarkAttendance={handleMarkAttendance}
+                isHoliday={isHoliday}
+                todayStr={todayStr}
+              />
+            ))}
           </tbody>
         </table>
         {sortedAndFilteredStudents.length === 0 && <p className="text-center p-8 text-slate-500 dark:text-slate-400">No students match the current filter.</p>}

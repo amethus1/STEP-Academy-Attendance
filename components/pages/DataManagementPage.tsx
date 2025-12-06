@@ -23,15 +23,8 @@ export const DataManagementPage: React.FC = () => {
   const [isBackingUp, setIsBackingUp] = useState(false);
 
   useEffect(() => {
-    // Check if we can get storage location, else mock it or ignore
-    import('../../services/storageService').then(async (m) => {
-      try {
-        const loc = await m.getStorageLocation();
-        setCurrentLocation(loc || 'Default (App Data Reference)');
-      } catch (e) {
-        setCurrentLocation('Managed by Tauri SQLite');
-      }
-    });
+    // SQLite managed internally
+    setCurrentLocation('Internal Direct SQL Database');
   }, []);
 
   const handleChangeLocation = async () => {
