@@ -1,12 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { toast } from 'sonner';
-
-const APP_VERSION = "1.0.3"; // Should match tauri.conf.json
+import { getVersion } from '@tauri-apps/api/app';
 
 export const HelpPage: React.FC = () => {
   const [checking, setChecking] = useState(false);
+  const [appVersion, setAppVersion] = useState('');
+
+  useEffect(() => {
+    getVersion().then(setAppVersion);
+  }, []);
 
   const handleCheckUpdate = async () => {
     setChecking(true);
@@ -23,7 +27,7 @@ export const HelpPage: React.FC = () => {
           await relaunch();
         }
       } else {
-        toast.success("You are on the latest version.");
+        toast.success(`You are on the latest version (${appVersion}).`);
       }
     } catch (error) {
       console.error('Failed to check for updates:', error);
@@ -42,7 +46,7 @@ export const HelpPage: React.FC = () => {
     <div className="max-w-4xl mx-auto">
       <div className="bg-white dark:bg-slate-900 p-8 rounded-lg shadow-sm">
         <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-100">S.T.E.P. Academy</h2>
-        <p className="text-slate-500 dark:text-slate-400 mt-1">Version {APP_VERSION}</p>
+        <p className="text-slate-500 dark:text-slate-400 mt-1">Version {appVersion}</p>
 
         <div className="mt-4">
           <button
