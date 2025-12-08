@@ -289,7 +289,11 @@ export const getStudentDetails = async (studentId: string) => {
 };
 
 export const createStudent = async (student: DBStudent, enrollment: DBEnrollment): Promise<void> => {
-    await withTransaction(async (db) => {
+    const { acquireWriteLock, getDb } = await import('./index');
+    const releaseLock = await acquireWriteLock();
+
+    try {
+        const db = await getDb();
         const exists = await db.select<DBStudent[]>("SELECT id FROM students WHERE id = $1", [student.id]);
 
         if (exists.length === 0) {
@@ -310,7 +314,9 @@ export const createStudent = async (student: DBStudent, enrollment: DBEnrollment
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
             [enrollment.id, enrollment.student_id, enrollment.school_year, enrollment.start_date, enrollment.end_date, enrollment.grade_level, enrollment.campus, enrollment.status, enrollment.sped_504, enrollment.drg_offense, enrollment.days_assigned, enrollment.credit_days, enrollment.comments]
         );
-    });
+    } finally {
+        releaseLock();
+    }
 
     await createAuditLog('CREATE_STUDENT', 'Student', student.id, `Created ${student.first_name} ${student.last_name}`);
 };
@@ -325,11 +331,17 @@ export const updateStudent = async (student: DBStudent): Promise<void> => {
 };
 
 export const deleteStudent = async (studentId: string): Promise<void> => {
-    await withTransaction(async (db) => {
+    const { acquireWriteLock, getDb } = await import('./index');
+    const releaseLock = await acquireWriteLock();
+
+    try {
+        const db = await getDb();
         await db.execute("DELETE FROM attendance WHERE student_id = $1", [studentId]);
         await db.execute("DELETE FROM enrollments WHERE student_id = $1", [studentId]);
         await db.execute("DELETE FROM students WHERE id = $1", [studentId]);
-    });
+    } finally {
+        releaseLock();
+    }
 
     await createAuditLog('DELETE_STUDENT', 'Student', studentId, 'Deleted student and related records');
 };

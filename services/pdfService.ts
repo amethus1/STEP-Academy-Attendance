@@ -1,6 +1,9 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { toISODateString } from './dateUtils';
+import { save } from '@tauri-apps/plugin-dialog';
+import { writeFile } from '@tauri-apps/plugin-fs';
+import { toast } from 'sonner';
 
 interface ReportData {
     title: string;
@@ -10,7 +13,7 @@ interface ReportData {
     summary?: { label: string; value: string | number }[];
 }
 
-export const generatePDF = (report: ReportData, filename: string = 'report') => {
+export const generatePDF = async (report: ReportData, filename: string = 'report') => {
     const doc = new jsPDF();
 
     // Header
@@ -53,5 +56,23 @@ export const generatePDF = (report: ReportData, filename: string = 'report') => 
         styles: { fontSize: 10 },
     });
 
-    doc.save(`${filename}.pdf`);
+    try {
+        // Use Tauri's save dialog
+        const filePath = await save({
+            defaultPath: `${filename}.pdf`,
+            filters: [{ name: 'PDF', extensions: ['pdf'] }]
+        });
+
+        if (filePath) {
+            // Get PDF as Uint8Array and write to file
+            const pdfOutput = doc.output('arraybuffer');
+            await writeFile(filePath, new Uint8Array(pdfOutput));
+            toast.success(`PDF saved to ${filePath}`);
+        }
+    } catch (error) {
+        console.error('Failed to save PDF:', error);
+        // Fallback to browser download
+        doc.save(`${filename}.pdf`);
+        toast.success('PDF downloaded');
+    }
 };

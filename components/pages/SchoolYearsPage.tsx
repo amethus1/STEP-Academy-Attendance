@@ -41,6 +41,37 @@ export const SchoolYearsPage: React.FC = () => {
         }
     };
 
+    const handleAddCurrentYear = async () => {
+        // Calculate current school year based on today's date
+        const today = new Date();
+        const currentYear = today.getFullYear();
+        const month = today.getMonth(); // 0-indexed (0 = January)
+
+        // If we're before August, we're in the previous school year
+        const startYear = month < 7 ? currentYear - 1 : currentYear;
+        const endYear = startYear + 1;
+        const yearName = `${startYear}-${endYear}`;
+
+        // Check if this year already exists
+        const exists = schoolYears.some(y => y.name === yearName);
+        if (exists) {
+            alert(`School year ${yearName} already exists.`);
+            return;
+        }
+
+        try {
+            await createSchoolYear.mutateAsync({
+                id: crypto.randomUUID(),
+                name: yearName,
+                startDate: `${startYear}-08-01`,
+                endDate: `${endYear}-07-31`
+            });
+        } catch (error) {
+            console.error("Failed to create school year", error);
+            alert("Failed to create school year.");
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
@@ -68,13 +99,22 @@ export const SchoolYearsPage: React.FC = () => {
         <div className="space-y-6 animate-fade-in">
             <div className="flex justify-between items-center">
                 <h1 className="text-2xl font-bold text-slate-800 dark:text-white">School Years Management</h1>
-                <button
-                    type="button"
-                    onClick={handleCreate}
-                    className="bg-brand hover:bg-brand-dark text-white px-4 py-2 rounded-md shadow-sm transition-colors"
-                >
-                    Add School Year
-                </button>
+                <div className="flex gap-2">
+                    <button
+                        type="button"
+                        onClick={handleAddCurrentYear}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-md shadow-sm transition-colors"
+                    >
+                        + Current Year
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleCreate}
+                        className="bg-brand hover:bg-brand-dark text-white px-4 py-2 rounded-md shadow-sm transition-colors"
+                    >
+                        Add School Year
+                    </button>
+                </div>
             </div>
 
             <div className="bg-white dark:bg-slate-800 shadow rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700">

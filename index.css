@@ -17,12 +17,17 @@
 }
 
 @media print {
+
+  /* Base print styles */
   body {
     background-color: white !important;
+    font-size: 12pt;
+    line-height: 1.4;
+    color: black !important;
   }
 
   /* Hide everything by default */
-  body * {
+  body>* {
     visibility: hidden;
   }
 
@@ -30,8 +35,6 @@
   .printable-content,
   .printable-content * {
     visibility: visible;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
   }
 
   /* Position the printable content to take up the whole page */
@@ -41,8 +44,35 @@
     top: 0;
     width: 100%;
     margin: 0;
-    padding: 0;
+    padding: 20px;
     box-shadow: none !important;
     border: none !important;
+  }
+
+  /* Force colors in print */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide interactive elements */
+  nav,
+  aside,
+  [role="navigation"],
+  .no-print {
+    display: none !important;
+  }
+
+  /* Page breaks */
+  .page-break-before {
+    page-break-before: always;
+  }
+
+  .page-break-after {
+    page-break-after: always;
+  }
+
+  @page {
+    margin: 0.5in;
   }
 }

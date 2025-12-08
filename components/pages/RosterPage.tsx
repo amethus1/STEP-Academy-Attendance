@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useUniqueStudents, useCreateStudent } from '../../hooks/useStudents';
 import { useSchoolYears } from '../../hooks/useSchoolYears';
+import { useActiveSchoolYear } from '../../hooks/useActiveSchoolYear';
 import { useHolidays } from '../../hooks/useAttendance';
 import { useSettings } from '../../hooks/useSettings';
 import { Student, StudentStatus, CustomFieldDefinition } from '../../types';
@@ -154,9 +155,24 @@ export const RosterPage: React.FC = () => {
   // Extract just the year names from the SchoolYear objects
   const schoolYearNames = useMemo(() => schoolYearsData.map(y => y.name), [schoolYearsData]);
   const allSchoolYears = useMemo(() => ['All', ...schoolYearNames], [schoolYearNames]);
-  const [selectedSchoolYear, setSelectedSchoolYear] = useState<string>(schoolYearNames[0] || '2024-2025');
+  const activeSchoolYear = useActiveSchoolYear();
+  const [selectedSchoolYear, setSelectedSchoolYear] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+  const hasInitializedYear = React.useRef(false);
+
+  // Sync selectedSchoolYear with activeSchoolYear on initial load only
+  useEffect(() => {
+    if (hasInitializedYear.current) return;
+
+    if (activeSchoolYear) {
+      setSelectedSchoolYear(activeSchoolYear);
+      hasInitializedYear.current = true;
+    } else if (schoolYearNames.length > 0) {
+      setSelectedSchoolYear(schoolYearNames[0]);
+      hasInitializedYear.current = true;
+    }
+  }, [activeSchoolYear, schoolYearNames]);
 
   // Debounce search
   useEffect(() => {

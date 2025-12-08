@@ -119,6 +119,18 @@ const MIGRATIONS: Migration[] = [
         sql: `
         ALTER TABLE attendance ADD COLUMN comment TEXT;
         `
+    },
+    {
+        version: 5,
+        name: 'Seed Default School Years',
+        sql: `
+        -- Insert default school years (current + 2 years back)
+        -- Uses INSERT OR IGNORE to avoid duplicates if already exists
+        INSERT OR IGNORE INTO school_years (id, name, start_date, end_date) VALUES 
+            (lower(hex(randomblob(16))), '2023-2024', '2023-08-01', '2024-07-31'),
+            (lower(hex(randomblob(16))), '2024-2025', '2024-08-01', '2025-07-31'),
+            (lower(hex(randomblob(16))), '2025-2026', '2025-08-01', '2026-07-31');
+        `
     }
 ];
 

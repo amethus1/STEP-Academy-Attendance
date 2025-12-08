@@ -4,6 +4,7 @@ import { Student, StudentStatus } from '../../types';
 import { useSettings } from '../../hooks/useSettings';
 import { useStudents, useCreateStudent } from '../../hooks/useStudents';
 import { useSchoolYears } from '../../hooks/useSchoolYears';
+import { useActiveSchoolYear } from '../../hooks/useActiveSchoolYear';
 import { toast } from 'sonner';
 import { DBStudent, DBEnrollment, updateStudentEnrollment } from '../../db/queries';
 import { getSchoolYearFromDate } from '../../services/dateUtils';
@@ -28,10 +29,9 @@ export const RolloverModal: React.FC<RolloverModalProps> = ({ isOpen, onClose })
     const { settings, saveSettings } = useSettings();
     const { data: schoolYears = [] } = useSchoolYears();
 
-    const currentSchoolYear = useMemo(() => {
-        if (!settings.schoolYearStartDate) return '2024-2025';
-        return getSchoolYearFromDate(new Date(settings.schoolYearStartDate), schoolYears);
-    }, [settings.schoolYearStartDate, schoolYears]);
+    // Use the system's active school year
+    const activeSchoolYear = useActiveSchoolYear();
+    const currentSchoolYear = activeSchoolYear || '2024-2025';
 
     // Fetch students for the current active year
     const { data: rawStudents = [] } = useStudents(currentSchoolYear);
@@ -206,10 +206,11 @@ export const RolloverModal: React.FC<RolloverModalProps> = ({ isOpen, onClose })
 
             await Promise.all(createPromises);
 
-            // 4. Update School Year Settings
+            // 4. Update School Year Settings including active year
             saveSettings({
                 schoolYearStartDate: newStartDate,
-                schoolYearEndDate: newEndDate
+                schoolYearEndDate: newEndDate,
+                activeSchoolYear: targetSchoolYear
             });
 
             // 5. Invalidate queries so the new school year appears in filters
