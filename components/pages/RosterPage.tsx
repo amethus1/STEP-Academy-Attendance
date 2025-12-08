@@ -13,6 +13,7 @@ import { StudentFormModal } from '../common/StudentFormModal';
 import { StatusBadge } from '../common/StatusBadge';
 import { PageLoadingSkeleton } from '../common/SkeletonLoader';
 import { DocumentArrowDownIcon } from '../icons/Icons';
+import { DataTable, ColumnDef } from '../common/DataTable';
 
 type SortKey = keyof UniqueStudentUI | string;
 type SortDirection = 'asc' | 'desc';
@@ -165,6 +166,10 @@ export const RosterPage: React.FC = () => {
 
   const [filters, setFilters] = useState(settings.rosterFilters || initialFilters);
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
   // Persist filters on change
   useEffect(() => {
     saveSettings({ rosterFilters: filters });
@@ -305,6 +310,24 @@ export const RosterPage: React.FC = () => {
     return filtered;
   }, [studentData, sortConfig, customFieldDefinitions, filters.entryDateFrom, filters.entryDateTo]);
 
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearchTerm, filters, selectedSchoolYear]);
+
+  // Pagination calculations
+  const totalStudents = sortedAndFilteredStudents.length;
+  const totalPages = Math.ceil(totalStudents / pageSize);
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const paginatedStudents = sortedAndFilteredStudents.slice(startIndex, endIndex);
+
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
+
   const requestSort = (key: SortKey) => {
     let direction: SortDirection = 'asc';
     if (sortConfig.key === key && sortConfig.direction === 'asc') {
@@ -393,6 +416,49 @@ export const RosterPage: React.FC = () => {
     exportToCsv(`student-roster-${toISODateString(new Date())}`, dataToExport, headers);
   };
 
+  const tableColumns = useMemo<ColumnDef<typeof paginatedStudents[0]>[]>(() => {
+    return orderedVisibleHeaders.map(col => ({
+      id: col.id,
+      label: col.label,
+      sortable: true,
+      render: (student) => {
+        const isDateColumn = ['registrationDate', 'entryDate', 'exitDate', 'projectedReleaseDate'].includes(col.id as string);
+
+        if (col.isCustom) {
+          return student.customFields[col.id] ?? 'N/A';
+        }
+
+        if (col.id === 'lastName') {
+          return (
+            <span className="flex items-center gap-2">
+              <Link to={`/student/${student.id}`} className="font-medium text-brand-dark hover:underline dark:text-brand-light">{student.lastName}</Link>
+              {selectedSchoolYear === 'All' && student.enrollmentCount > 1 && (
+                <span className="px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs font-medium rounded-full" title={`${student.enrollmentCount} total enrollments`}>
+                  ×{student.enrollmentCount}
+                </span>
+              )}
+            </span>
+          );
+        }
+
+        if (col.id === 'status') {
+          return <StatusBadge status={student.status} />;
+        }
+
+        if (col.id === 'studentNumber') {
+          return student.studentNumber || student.id;
+        }
+
+        if (isDateColumn) {
+          const dateVal = student[col.id as keyof UniqueStudentUI];
+          return dateVal && dateVal !== 'N/A' && dateVal !== 'Completed' && dateVal !== 'Withdrawn' ? formatDateForDisplay(dateVal as string) : dateVal;
+        }
+
+        return student[col.id as keyof UniqueStudentUI];
+      }
+    }));
+  }, [orderedVisibleHeaders, selectedSchoolYear]);
+
   if (loading) return <PageLoadingSkeleton />;
 
   return (
@@ -446,56 +512,21 @@ export const RosterPage: React.FC = () => {
           <button onClick={() => setFilters(initialFilters)} className="px-4 py-2 bg-slate-200 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-300 dark:hover:bg-slate-600 h-10">Reset Filters</button>
         </div>
       </div>
-      <div className="bg-white dark:bg-slate-900 rounded-lg shadow-sm overflow-x-auto">
-        <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
-          <thead className="bg-slate-50 dark:bg-slate-800">
-            <tr>
-              {orderedVisibleHeaders.map(col => (
-                <th key={col.id} className="py-3 px-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider cursor-pointer" onClick={() => requestSort(col.id)}>
-                  {col.label} {sortConfig.key === col.id ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="bg-white dark:bg-slate-900 divide-y divide-slate-200 dark:divide-slate-700">
-            {sortedAndFilteredStudents.map(s => (
-              <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-800">
-                {orderedVisibleHeaders.map(col => {
-                  let cellContent: any;
-                  const isDateColumn = ['registrationDate', 'entryDate', 'exitDate', 'projectedReleaseDate'].includes(col.id as string);
 
-                  if (col.isCustom) {
-                    cellContent = s.customFields[col.id] ?? 'N/A';
-                  } else if (col.id === 'lastName') {
-                    cellContent = (
-                      <span className="flex items-center gap-2">
-                        <Link to={`/student/${s.id}`} className="font-medium text-brand-dark hover:underline dark:text-brand-light">{s.lastName}</Link>
-                        {selectedSchoolYear === 'All' && s.enrollmentCount > 1 && (
-                          <span className="px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs font-medium rounded-full" title={`${s.enrollmentCount} total enrollments`}>
-                            ×{s.enrollmentCount}
-                          </span>
-                        )}
-                      </span>
-                    );
-                  } else if (col.id === 'status') {
-                    cellContent = <StatusBadge status={s.status} />;
-                  } else if (col.id === 'studentNumber') {
-                    cellContent = s.studentNumber || s.id;
-                  } else if (isDateColumn) {
-                    const dateVal = s[col.id as keyof UniqueStudentUI];
-                    cellContent = dateVal && dateVal !== 'N/A' && dateVal !== 'Completed' && dateVal !== 'Withdrawn' ? formatDateForDisplay(dateVal as string) : dateVal;
-                  }
-                  else {
-                    cellContent = s[col.id as keyof UniqueStudentUI];
-                  }
-                  return <td key={col.id} className="py-3 px-4 whitespace-nowrap text-sm text-slate-700 dark:text-slate-300">{cellContent}</td>
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {sortedAndFilteredStudents.length === 0 && <p className="text-center p-8 text-slate-500 dark:text-slate-400">No students found.</p>}
-      </div>
+      <DataTable<UniqueStudentUI>
+        data={paginatedStudents}
+        columns={tableColumns}
+        keyExtractor={(s) => s.id}
+        isLoading={loading}
+        sortConfig={sortConfig}
+        onSort={requestSort}
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPageChange={goToPage}
+        pageSize={pageSize}
+        onPageSizeChange={(size) => { setPageSize(size); setCurrentPage(1); }}
+        emptyMessage="No students found."
+      />
     </div>
   );
 };

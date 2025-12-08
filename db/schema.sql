@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS attendance (
   student_id TEXT NOT NULL,
   enrollment_id TEXT NOT NULL,
   date TEXT NOT NULL,
-  presence TEXT NOT NULL, -- 'Present', 'Absent', 'Tardy'
+  presence TEXT NOT NULL, -- 'Present', 'Absent', 'Tardy', 'Excused'
+  comment TEXT,
   FOREIGN KEY(student_id) REFERENCES students(id),
   FOREIGN KEY(enrollment_id) REFERENCES enrollments(id),
   UNIQUE(student_id, date)
@@ -68,3 +69,21 @@ CREATE TABLE IF NOT EXISTS school_years (
 );
 
 CREATE INDEX IF NOT EXISTS idx_school_years_dates ON school_years(start_date, end_date);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id TEXT PRIMARY KEY,
+    action TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT,
+    details TEXT,
+    user_id TEXT,
+    timestamp TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);

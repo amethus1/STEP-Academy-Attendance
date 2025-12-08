@@ -1,4 +1,4 @@
-import { Student, AttendanceRecord, Holiday, Presence } from '../types';
+// Imports removed as they are no longer needed
 import { getSettingsSync } from './settingsService';
 
 export const toISODateString = (date: Date): string => {
@@ -35,52 +35,30 @@ export const formatDateForDisplay = (date: Date | string): string => {
   }
 };
 
-export const getDaysAttended = (studentId: string, attendance: AttendanceRecord[]): number => {
-  return attendance.filter(a => a.studentId === studentId && a.presence === Presence.Present).length;
-};
+export const addBusinessDays = (startDate: Date, daysToAdd: number, holidayDates: Set<string>): Date => {
+  const currentDate = new Date(startDate);
+  // Ensure we are working with noon UTC to safely add days without DST shifts affecting the date part
+  currentDate.setUTCHours(12, 0, 0, 0);
 
-export const calculateReleaseDateFromRemaining = (
-  daysRemaining: number,
-  holidays: Holiday[],
-  projectionStartDateStr: string
-): string => {
-  if (daysRemaining <= 0) {
-    return 'Completed';
-  }
-
-  let projectedDate = new Date(projectionStartDateStr + 'T12:00:00Z'); // Use UTC to avoid timezone issues
   let daysAdded = 0;
-  const holidayDates = new Set(holidays.map(h => h.date));
 
-  while (daysAdded < daysRemaining) {
-    projectedDate.setDate(projectedDate.getDate() + 1);
-    const dayOfWeek = projectedDate.getUTCDay();
-    const dateStr = toISODateString(projectedDate);
+  // Safety break to prevent infinite loops
+  const maxIterations = daysToAdd * 5 + 365; // Generous buffer
+  let iterations = 0;
 
-    // Skip weekends and holidays
+  while (daysAdded < daysToAdd && iterations < maxIterations) {
+    currentDate.setDate(currentDate.getDate() + 1);
+    const dayOfWeek = currentDate.getUTCDay();
+    const dateStr = toISODateString(currentDate);
+
+    // Skip weekends (0=Sun, 6=Sat) and holidays
     if (dayOfWeek !== 0 && dayOfWeek !== 6 && !holidayDates.has(dateStr)) {
       daysAdded++;
     }
+    iterations++;
   }
 
-  return toISODateString(projectedDate);
-};
-
-export const calculateProjectedReleaseDate = (
-  student: Student,
-  attendance: AttendanceRecord[],
-  holidays: Holiday[],
-  projectionStartDateStr: string,
-): string => {
-  if (student.status !== 'Active') {
-    return 'N/A';
-  }
-
-  const daysAttended = getDaysAttended(student.id, attendance);
-  const creditDays = student.creditDays || 0;
-  const daysRemaining = student.daysAssigned - daysAttended - creditDays;
-
-  return calculateReleaseDateFromRemaining(daysRemaining, holidays, projectionStartDateStr);
+  return currentDate;
 };
 
 
@@ -92,6 +70,19 @@ export const getWeekDays = (startDate: Date): Date[] => {
     days.push(newDate);
   }
   return days;
+};
+
+export const getDateRange = (startDate: string, endDate: string): string[] => {
+  const start = new Date(startDate + "T12:00:00Z");
+  const end = new Date(endDate + "T12:00:00Z");
+  const dates: string[] = [];
+  const currentDate = new Date(start);
+
+  while (currentDate <= end) {
+    dates.push(toISODateString(currentDate));
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  return dates;
 };
 
 export const getStartOfWeek = (date: Date, weekStartDay: 'sunday' | 'monday' = 'monday'): Date => {

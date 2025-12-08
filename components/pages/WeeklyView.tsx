@@ -1,20 +1,20 @@
+
 import React, { useState, useMemo, useCallback } from 'react';
-import { Link } from 'react-router-dom';
-import { useStudents, useCreateStudent } from '../../hooks/useStudents';
+
+import { useStudents } from '../../hooks/useStudents';
 import { useAttendanceRange, useSaveAttendance, useDeleteAttendance, useHolidays } from '../../hooks/useAttendance';
-import { useSchoolYears } from '../../hooks/useSchoolYears';
+import { useActiveSchoolYear } from '../../hooks/useActiveSchoolYear';
 import { useSettings } from '../../hooks/useSettings';
-import { Presence, Student, StudentStatus } from '../../types';
-import { ExtendedStudent, mapDBStudentToUI } from '../../services/mappers';
-import { toISODateString, getDaysAttended, formatDateForDisplay, getStartOfWeek, getWeekDays, getSchoolYearFromDate } from '../../services/dateUtils';
-import { StatusBadge } from '../common/StatusBadge';
-import { AttendanceButton } from '../common/AttendanceButton';
+import { Presence, StudentStatus } from '../../types';
+import { mapDBStudentToUI } from '../../services/mappers';
+import { toISODateString, formatDateForDisplay, getStartOfWeek, getWeekDays } from '../../services/dateUtils';
+
 import { PageLoadingSkeleton } from '../common/SkeletonLoader';
 import { WeeklyStudentRow } from './WeeklyStudentRow';
 import { ChipFilter } from '../common/ChipFilter';
 import { BulkActionBar } from './BulkActionBar';
+import { useStudentFilter, SortKey } from '../../hooks/useStudentFilter';
 
-type SortKey = keyof ExtendedStudent | string;
 const EMPTY_MAP = {};
 
 const fixedColumns: { id: SortKey; label: string; isSticky?: boolean; widthClass?: string }[] = [
@@ -29,21 +29,12 @@ const fixedColumns: { id: SortKey; label: string; isSticky?: boolean; widthClass
   { id: 'projectedReleaseDate', label: 'Release Date', widthClass: 'w-32' },
 ];
 
-
 export const WeeklyView: React.FC = () => {
-  // const { students, attendance, holidays, markAttendance, loading } = useAppData(); // REMOVED
   const { settings, saveSettings } = useSettings();
-  const { data: schoolYears = [] } = useSchoolYears();
-
   const [currentDate, setCurrentDate] = useState<string>(toISODateString(new Date()));
 
   // Derive school year - prefer manual selection, else auto-detect
-  const schoolYear = useMemo(() => {
-    if (settings.activeSchoolYear) {
-      return settings.activeSchoolYear;
-    }
-    return getSchoolYearFromDate(new Date(currentDate + "T12:00:00Z"), schoolYears);
-  }, [settings.activeSchoolYear, currentDate, schoolYears]);
+  const schoolYear = useActiveSchoolYear(currentDate + "T12:00:00Z");
 
   const { data: rawStudents, isLoading: studentsLoading } = useStudents(schoolYear);
   const { data: holidays = [] } = useHolidays();
@@ -51,13 +42,12 @@ export const WeeklyView: React.FC = () => {
   const { mutate: deleteAttendance } = useDeleteAttendance();
 
   // Helper types
-  function urlHolidaysToHolidays(hols: any[]) { return hols; }
+  function urlHolidaysToHolidays(hols: unknown[]) { return hols; }
 
   const startOfWeek = useMemo(() => getStartOfWeek(new Date(currentDate + 'T12:00:00Z')), [currentDate]);
   const displayDays = useMemo(() => getWeekDays(startOfWeek), [startOfWeek]);
 
   // Fetch attendance for the visible week
-  // Calculate end of week (last day of displayDays)
   const rangeStartStr = toISODateString(displayDays[0]);
   const rangeEndStr = toISODateString(displayDays[displayDays.length - 1]);
 
@@ -74,18 +64,24 @@ export const WeeklyView: React.FC = () => {
 
   const studentsInYear = useMemo(() => {
     if (!rawStudents) return [];
-    return rawStudents.map(s => mapDBStudentToUI(s, urlHolidaysToHolidays(holidays)));
+    return rawStudents.map(s => mapDBStudentToUI(s, urlHolidaysToHolidays(holidays) as any));
   }, [rawStudents, holidays]);
 
-  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'lastName', direction: 'asc' });
-  const [searchTerm, setSearchTerm] = useState('');
-
-  // Filters
-  const [statusFilter, setStatusFilter] = useState<StudentStatus | 'All'>(
-    (settings.weeklyFilters?.status as StudentStatus | 'All') || StudentStatus.Active
-  );
-  const [gradeFilter, setGradeFilter] = useState(settings.weeklyFilters?.grade || 'All');
-  const [spedFilter, setSpedFilter] = useState(settings.weeklyFilters?.sped || 'All');
+  // Use centralized filter hook
+  const {
+    searchTerm, setSearchTerm,
+    statusFilter, setStatusFilter,
+    gradeFilter, setGradeFilter,
+    spedFilter, setSpedFilter,
+    sortConfig,
+    requestSort,
+    filteredStudents: sortedAndFilteredStudents,
+    gradeLevels
+  } = useStudentFilter(studentsInYear, {
+    status: (settings.weeklyFilters?.status as StudentStatus | 'All') || StudentStatus.Active,
+    grade: settings.weeklyFilters?.grade,
+    sped: settings.weeklyFilters?.sped
+  });
 
   // Persist weekly filters
   React.useEffect(() => {
@@ -97,12 +93,6 @@ export const WeeklyView: React.FC = () => {
       }
     });
   }, [statusFilter, gradeFilter, spedFilter, saveSettings]);
-
-  const gradeLevels = useMemo(
-    () => ['All', ...Array.from(new Set(studentsInYear.map(s => s.gradeLevel).filter(Boolean)))],
-    [studentsInYear]
-  );
-  const spedOptions = ['All', 'None', 'SPED', '504'];
 
   /* Selection State */
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
@@ -142,28 +132,6 @@ export const WeeklyView: React.FC = () => {
     }
   }
 
-  const sortedAndFilteredStudents = useMemo(() => {
-    let filtered = studentsInYear.filter(s => {
-      // Logic from legacy: filter by school year dates (handled by useStudents query)
-      // Additional logic: filter by status, grade, etc.
-
-      const statusMatch = statusFilter === 'All' || s.status === statusFilter;
-      const gradeMatch = gradeFilter === 'All' || s.gradeLevel === gradeFilter;
-      const spedMatch = spedFilter === 'All' || s.sped504 === spedFilter;
-      const searchMatch = `${s.firstName} ${s.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.id.toLowerCase().includes(searchTerm.toLowerCase());
-      return statusMatch && gradeMatch && spedMatch && searchMatch;
-    });
-
-    return [...filtered].sort((a, b) => {
-      const aVal = a[sortConfig.key as keyof ExtendedStudent];
-      const bVal = b[sortConfig.key as keyof ExtendedStudent];
-      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
-      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }, [studentsInYear, statusFilter, gradeFilter, spedFilter, sortConfig, searchTerm]);
-
   const handleMarkAttendance = useCallback((studentId: string, date: string, currentPresence: Presence | undefined, targetPresence: Presence) => {
     const newPresence = currentPresence === targetPresence ? null : targetPresence;
 
@@ -172,12 +140,16 @@ export const WeeklyView: React.FC = () => {
       return;
     }
 
+    const enrollmentId = studentsInYear.find(s => s.id === studentId)?.enrollmentId;
+    if (!enrollmentId) return;
+
     saveAttendance([{
       id: crypto.randomUUID(),
-      enrollment_id: studentsInYear.find(s => s.id === studentId)?.enrollmentId!,
+      enrollment_id: enrollmentId,
       student_id: studentId,
       date: date,
-      presence: newPresence
+      presence: newPresence,
+      comment: null
     }]);
   }, [deleteAttendance, saveAttendance, studentsInYear]);
 
@@ -185,53 +157,30 @@ export const WeeklyView: React.FC = () => {
     if (selectedStudentIds.size === 0) return;
     const dateStr = todayStr; // Bulk mark for TODAY only
 
-    const records = Array.from(selectedStudentIds).map((studentId: string) => ({
-      id: crypto.randomUUID(),
-      enrollment_id: studentsInYear.find(s => s.id === studentId)?.enrollmentId!,
-      student_id: studentId,
-      date: dateStr,
-      presence: presence
-    }));
+    const records: { id: string, enrollment_id: string, student_id: string, date: string, presence: Presence, comment: null }[] = [];
 
-    saveAttendance(records);
-    setSelectedStudentIds(new Set()); // Clear selection after action? Or keep it? keep is better for toggling back/forth.
-    // But clearing gives feedback "done". Let's clear properly.
+    selectedStudentIds.forEach((studentId) => {
+      const student = studentsInYear.find(s => s.id === studentId);
+      if (student?.enrollmentId) {
+        records.push({
+          id: crypto.randomUUID(),
+          enrollment_id: student.enrollmentId,
+          student_id: studentId,
+          date: dateStr,
+          presence: presence,
+          comment: null
+        });
+      }
+    });
+
+    if (records.length > 0) {
+      saveAttendance(records);
+    }
+
+    setSelectedStudentIds(new Set());
   }, [selectedStudentIds, studentsInYear, saveAttendance, todayStr]);
 
   const isHoliday = useCallback((date: string) => holidaySet.has(date), [holidaySet]);
-
-  const requestSort = (key: SortKey) => {
-    let direction: 'asc' | 'desc' = 'asc';
-    if (sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
-    }
-    setSortConfig({ key, direction });
-  };
-
-  const getCellValue = (student: ExtendedStudent, columnId: SortKey) => {
-    switch (columnId) {
-      case 'lastName':
-        return <Link to={`/student/${student.id}`} className="hover:underline text-brand-dark dark:text-brand-light">{student.lastName}</Link>;
-      case 'firstName':
-        return student.firstName;
-      case 'studentNumber':
-        return student.studentNumber || student.id;
-      case 'campus':
-        return student.campus;
-      case 'gradeLevel':
-        return student.gradeLevel;
-      case 'status':
-        return <StatusBadge status={student.status} />;
-      case 'daysRemaining':
-        return <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${student.daysRemaining > 10 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{student.daysRemaining}</span>
-      case 'projectedReleaseDate': {
-        const dateVal = student.projectedReleaseDate;
-        return dateVal && dateVal !== 'N/A' && dateVal !== 'Completed' ? formatDateForDisplay(dateVal as string) : dateVal;
-      }
-      default:
-        return student[columnId as keyof ExtendedStudent] as string | number;
-    }
-  }
 
   const loading = studentsLoading || attendanceLoading;
 
@@ -244,6 +193,7 @@ export const WeeklyView: React.FC = () => {
           <button onClick={() => changeWeek(-1)} className="px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-50 dark:hover:bg-slate-600">Prev Week</button>
           <input type="date" value={currentDate} onChange={handleDateJump} className="p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white" />
           <button onClick={() => changeWeek(1)} className="px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-50 dark:hover:bg-slate-600">Next Week</button>
+          <button onClick={() => setCurrentDate(toISODateString(new Date()))} className="ml-2 px-3 py-2 text-brand hover:underline text-sm font-medium">This Week</button>
         </div>
       </div>
 
@@ -260,7 +210,7 @@ export const WeeklyView: React.FC = () => {
           <ChipFilter
             label="Status"
             selectedValue={statusFilter}
-            onChange={(val) => setStatusFilter(val as any)}
+            onChange={(val) => setStatusFilter(val as StudentStatus | 'All')}
             options={[
               { label: 'Active', value: StudentStatus.Active },
               { label: 'Completed', value: StudentStatus.Completed },

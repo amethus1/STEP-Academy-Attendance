@@ -112,6 +112,13 @@ const MIGRATIONS: Migration[] = [
             ('rosterFilters', '{}', datetime('now')),
             ('customFieldDefinitions', '[]', datetime('now'));
         `
+    },
+    {
+        version: 4,
+        name: 'Add Attendance Comments',
+        sql: `
+        ALTER TABLE attendance ADD COLUMN comment TEXT;
+        `
     }
 ];
 

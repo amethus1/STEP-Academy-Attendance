@@ -1,5 +1,5 @@
 import { Holiday } from '../types';
-import { toISODateString } from './dateUtils';
+import { toISODateString, addBusinessDays } from './dateUtils';
 
 /**
  * Calculates the number of remaining days a student needs to attend.
@@ -26,25 +26,9 @@ export const calculateProjectedReleaseDate = (
         return 'Completed';
     }
 
-    let projectedDate = new Date(projectionStartDateStr + 'T12:00:00Z'); // Use UTC
-    let daysAdded = 0;
+    const startDate = new Date(projectionStartDateStr + 'T12:00:00Z');
     const holidayDates = new Set(holidays.map(h => h.date));
 
-    // Safety break after 2 years
-    const maxIterations = 365 * 2;
-    let iterations = 0;
-
-    while (daysAdded < daysRemaining && iterations < maxIterations) {
-        projectedDate.setDate(projectedDate.getDate() + 1);
-        const dayOfWeek = projectedDate.getUTCDay();
-        const dateStr = toISODateString(projectedDate);
-
-        // Skip weekends (0=Sun, 6=Sat) and holidays
-        if (dayOfWeek !== 0 && dayOfWeek !== 6 && !holidayDates.has(dateStr)) {
-            daysAdded++;
-        }
-        iterations++;
-    }
-
+    const projectedDate = addBusinessDays(startDate, daysRemaining, holidayDates);
     return toISODateString(projectedDate);
 };

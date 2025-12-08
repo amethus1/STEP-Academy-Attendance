@@ -39,6 +39,8 @@ export interface Student {
 export enum Presence {
   Present = "Present",
   Absent = "Absent",
+  Tardy = "Tardy",
+  Excused = "Excused",
 }
 
 export interface AttendanceRecord {

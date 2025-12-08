@@ -12,10 +12,11 @@ import { SettingsPage } from './components/pages/SettingsPage';
 import { HelpPage } from './components/pages/HelpPage';
 import { ReportingPage } from './components/pages/ReportingPage';
 import { DashboardPage } from './components/pages/DashboardPage';
+import { AuditLogPage } from './components/pages/AuditLogPage';
 import { RedirectToDefault } from './components/common/RedirectToDefault';
 import { useSettings } from './hooks/useSettings';
 import { runAutoBackupIfNeeded } from './services/backupService';
-import { CalendarDaysIcon, ListBulletIcon, UserGroupIcon, Cog6ToothIcon, SunIcon, ArchiveBoxArrowDownIcon, QuestionMarkCircleIcon, ChartBarIcon, StepAcademyLogo, ChevronLeftIcon, ChevronRightIcon, HomeIcon } from './components/icons/Icons';
+import { CalendarDaysIcon, ListBulletIcon, UserGroupIcon, Cog6ToothIcon, SunIcon, ArchiveBoxArrowDownIcon, QuestionMarkCircleIcon, ChartBarIcon, StepAcademyLogo, ChevronLeftIcon, ChevronRightIcon, HomeIcon, ClockIcon } from './components/icons/Icons';
 
 const NavItem: React.FC<{ to: string; icon: React.ReactNode; children: React.ReactNode; isCollapsed: boolean }> = ({ to, icon, children, isCollapsed }) => {
   const baseClasses = "flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors duration-200";
@@ -69,6 +70,7 @@ const App: React.FC = () => {
       case '/roster': return 'Student Roster';
       case '/holidays': return 'Manage Holidays';
       case '/reports': return 'Reporting & Analytics';
+      case '/audit': return 'Audit Log';
       case '/data': return 'Data Management';
       case '/settings': return 'Settings';
       case '/help': return 'Help & About';
@@ -100,6 +102,7 @@ const App: React.FC = () => {
               <NavItem to="/daily" icon={<SunIcon />} isCollapsed={isSidebarCollapsed}>Daily View</NavItem>
               <NavItem to="/roster" icon={<UserGroupIcon />} isCollapsed={isSidebarCollapsed}>Student Roster</NavItem>
               <NavItem to="/reports" icon={<ChartBarIcon />} isCollapsed={isSidebarCollapsed}>Reporting</NavItem>
+              <NavItem to="/audit" icon={<ClockIcon />} isCollapsed={isSidebarCollapsed}>Audit Log</NavItem>
               <NavItem to="/holidays" icon={<ListBulletIcon />} isCollapsed={isSidebarCollapsed}>Holidays</NavItem>
               <NavItem to="/data" icon={<ArchiveBoxArrowDownIcon />} isCollapsed={isSidebarCollapsed}>Data Management</NavItem>
               <NavItem to="/settings" icon={<Cog6ToothIcon />} isCollapsed={isSidebarCollapsed}>Settings</NavItem>
@@ -124,6 +127,7 @@ const App: React.FC = () => {
               <Route path="/holidays" element={<HolidaysPage />} />
               <Route path="/settings/school-years" element={<SchoolYearsPage />} />
               <Route path="/reports" element={<ReportingPage />} />
+              <Route path="/audit" element={<AuditLogPage />} />
               <Route path="/data" element={<DataManagementPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/help" element={<HelpPage />} />

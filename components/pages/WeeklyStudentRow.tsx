@@ -84,11 +84,30 @@ export const WeeklyStudentRow = memo(({ student, displayDays, attendanceMap, fix
                         {isRegistrationDay && <span className="absolute top-1 right-1 text-xs font-bold text-purple-600 dark:text-purple-400" title={`Registered on ${formatDateForDisplay(dateStr)}`}>R</span>}
                         {isDisabled ? <div className="h-8 w-16" /> : (
                             <div className="flex justify-center items-center gap-2">
-                                <AttendanceButton
-                                    currentPresence={presence}
-                                    targetPresence={Presence.Present}
-                                    onClick={() => onMarkAttendance(student.id, dateStr, presence, Presence.Present)}
-                                />
+                                {presence === Presence.Tardy ? (
+                                    <button
+                                        onClick={() => onMarkAttendance(student.id, dateStr, presence, Presence.Present)}
+                                        className="p-1 rounded-full bg-yellow-100 text-yellow-600 hover:bg-yellow-200"
+                                        title="Tardy (Click to mark Present)"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                    </button>
+                                ) : presence === Presence.Excused ? (
+                                    <button
+                                        onClick={() => onMarkAttendance(student.id, dateStr, presence, Presence.Present)}
+                                        className="p-1 rounded-full bg-blue-100 text-blue-600 hover:bg-blue-200"
+                                        title="Excused (Click to mark Present)"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                    </button>
+                                ) : (
+                                    <AttendanceButton
+                                        currentPresence={presence}
+                                        targetPresence={Presence.Present}
+                                        onClick={() => onMarkAttendance(student.id, dateStr, presence, Presence.Present)}
+                                    />
+                                )}
+
                                 <AttendanceButton
                                     currentPresence={presence}
                                     targetPresence={Presence.Absent}
@@ -112,3 +131,5 @@ export const WeeklyStudentRow = memo(({ student, displayDays, attendanceMap, fix
         prev.todayStr === next.todayStr &&
         prev.displayDays === next.displayDays; // displayDays ref should be stable for a week
 });
+
+WeeklyStudentRow.displayName = 'WeeklyStudentRow';

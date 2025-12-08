@@ -51,7 +51,7 @@ export const generateMockData = (): AppData => {
   const endDate = new Date(startDate);
   endDate.setDate(endDate.getDate() + 30);
 
-  let loopDate = new Date(startDate);
+  const loopDate = new Date(startDate);
 
   while (loopDate <= endDate && loopDate <= today) {
     const dayOfWeek = loopDate.getUTCDay();

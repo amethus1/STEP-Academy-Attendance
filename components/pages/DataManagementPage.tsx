@@ -1,15 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { defaultQueryOptions } from '../../lib/react-query';
 import { useSettings } from '../../hooks/useSettings';
 import { toast } from 'sonner';
 import { RolloverModal } from './RolloverModal';
 import { CustomFieldDefinition, AutoBackupFrequency } from '../../types';
 import { TrashIcon } from '../icons/Icons';
-import { getExportData, importData, DBStudent, DBEnrollment, DBAttendance, DBHoliday, recalculateAllSchoolYears, closeOldEnrollments } from '../../db/queries';
+import { getExportData, importData, recalculateAllSchoolYears, closeOldEnrollments } from '../../db/queries';
 import { performBackup, getFrequencyLabel } from '../../services/backupService';
+import { validateImportData, isStandardFormat, ValidationResult } from '../../services/importValidation';
+import { isLegacyFormat, convertLegacyData } from '../../services/legacyImportService';
 
 export const DataManagementPage: React.FC = () => {
-  const { settings, saveSettings } = useSettings();
+  const { settings, saveSettings, pauseSettingsSave, resumeSettingsSave } = useSettings();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -25,6 +28,11 @@ export const DataManagementPage: React.FC = () => {
   const [showRecalculateConfirm, setShowRecalculateConfirm] = useState(false);
   const [isClosingOld, setIsClosingOld] = useState(false);
   const [showCloseOldConfirm, setShowCloseOldConfirm] = useState(false);
+
+  // Validation state
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  const [pendingImportData, setPendingImportData] = useState<any>(null);
+  const [showValidationModal, setShowValidationModal] = useState(false);
 
   useEffect(() => {
     // SQLite managed internally
@@ -66,7 +74,8 @@ export const DataManagementPage: React.FC = () => {
       if (result.success) {
         toast.success('Backup completed successfully!');
         // Refresh settings to show updated last backup date
-        window.location.reload();
+        // Refresh settings/queries
+        queryClient.invalidateQueries();
       } else {
         toast.error('Backup failed: ' + result.error);
       }
@@ -169,114 +178,115 @@ export const DataManagementPage: React.FC = () => {
 
   const processImport = async (text: string) => {
     try {
-      // Cancel background queries to release DB locks
+      // 0. Pause all settings saves to prevent DB lock contention
+      pauseSettingsSave();
+
+      // 1. Disable React Query automatic refetching during import
+      queryClient.setDefaultOptions({
+        queries: {
+          enabled: false,
+          refetchOnMount: false,
+          refetchOnWindowFocus: false,
+          refetchOnReconnect: false,
+          refetchInterval: false,
+        }
+      });
+
+      // 2. Cancel ALL background queries
       await queryClient.cancelQueries();
+
+      // 3. Clear the query cache completely
+      queryClient.clear();
+
+      // 4. Force a WAL checkpoint to release any pending writes
+      // Removing explicit checkpoint as it might cause more contention
+      // const { getDb } = await import('../../db/index');
+      // const db = await getDb();
+      // await db.execute("PRAGMA wal_checkpoint(TRUNCATE)");
+
+      // 5. Wait for any in-flight database operations to complete
+      toast.info("Preparing database for import...");
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
       const importedData = JSON.parse(text);
 
-      // 1. Standard Format Check
-      if ('students' in importedData && 'enrollments' in importedData && 'attendance' in importedData && 'holidays' in importedData) {
-        await importData(importedData);
-        toast.success("Data imported successfully!");
-        setTimeout(() => window.location.reload(), 1000);
+      // Helper function to attempt import with retry
+      const attemptImport = async (data: any, maxRetries = 3): Promise<void> => {
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            await importData(data);
+            return; // Success!
+          } catch (error) {
+            const errorMsg = String(error);
+            if ((errorMsg.includes('database is locked') || errorMsg.includes('code: 5')) && attempt < maxRetries) {
+              console.log(`Import attempt ${attempt} failed due to lock, retrying in ${attempt * 2} seconds...`);
+              toast.info(`Database busy, retrying... (${attempt}/${maxRetries})`);
+              await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+            } else {
+              throw error; // Re-throw on last attempt or non-lock error
+            }
+          }
+        }
+      };
+
+      // 1. Standard Format Check - validate before import
+      if (isStandardFormat(importedData)) {
+        const validation = validateImportData(importedData);
+
+        if (!validation.valid) {
+          // Show validation errors
+          setValidationResult(validation);
+          setPendingImportData(importedData);
+          setShowValidationModal(true);
+          return;
+        }
+
+        // Show summary and proceed (or show modal for confirmation with summary)
+        if (validation.warnings.length > 0) {
+          setValidationResult(validation);
+          setPendingImportData(importedData);
+          setShowValidationModal(true);
+          return;
+        }
+
+        // No errors or warnings - proceed with import
+        await attemptImport(importedData);
+        toast.success(`Imported ${validation.summary.studentsCount} students, ${validation.summary.enrollmentsCount} enrollments, ${validation.summary.attendanceCount} attendance records`);
+        queryClient.invalidateQueries();
+        resumeSettingsSave();
         return;
       }
 
-      // 2. Legacy Format Check (User Schema)
-      // Schema: { "$schema": "...", "properties": { "students": [...], "attendance": [...] } }
-      // We check for students and attendance arrays, and absence of enrollments
-      if (Array.isArray(importedData.students) && Array.isArray(importedData.attendance) && !importedData.enrollments) {
+      // 2. Legacy Format Check - convert old schema to current format
+      if (isLegacyFormat(importedData)) {
         toast.info("Legacy backup detected. Converting...");
 
-        // Transform Logic
-        const newStudents: DBStudent[] = [];
-        const newEnrollments: DBEnrollment[] = [];
-        const newAttendance: DBAttendance[] = [];
+        const convertedData = convertLegacyData(importedData);
+        await attemptImport(convertedData);
 
-        // Map legacy student ID (string like "12345") to new UUIDs
-        // legacyId -> { studentUuid, enrollmentUuid }
-        const idMap = new Map<string, { studentUuid: string, enrollmentUuid: string }>();
-
-        for (const s of importedData.students) {
-          const studentUuid = crypto.randomUUID();
-          const enrollmentUuid = crypto.randomUUID();
-
-          // Infer school year from entryDate or use current
-          let schoolYear = '2024-2025'; // Default
-          if (s.entryDate) {
-            const year = parseInt(s.entryDate.split('-')[0]);
-            const month = parseInt(s.entryDate.split('-')[1]);
-            // If aug-dec, year is start. If jan-jul, year-1 is start.
-            const startYear = month >= 8 ? year : year - 1;
-            schoolYear = `${startYear}-${startYear + 1}`;
-          }
-
-          idMap.set(s.id, { studentUuid, enrollmentUuid });
-
-          // Create Profile
-          newStudents.push({
-            id: studentUuid,
-            student_number: s.id, // Legacy ID becomes student number
-            first_name: s.firstName,
-            last_name: s.lastName,
-            dob: null, // Not in schema
-            guardian_name: s.guardianName || null,
-            guardian_phone: s.guardianPhone || null,
-            emergency_contact_name: s.emergencyContactName || null,
-            emergency_contact_phone: s.emergencyContactPhone || null,
-            photo_url: s.photoUrl || null,
-            custom_fields: JSON.stringify(s.customFields || {})
-          });
-
-          // Create Enrollment
-          newEnrollments.push({
-            id: enrollmentUuid,
-            student_id: studentUuid,
-            school_year: schoolYear,
-            start_date: s.entryDate || new Date().toISOString().split('T')[0],
-            end_date: s.exitDate || null, // Assuming exitDate might exist in data even if not in user's prompt schema example
-            grade_level: s.gradeLevel || 'Unknown',
-            campus: s.campus || 'Main',
-            status: s.status || 'Active',
-            sped_504: s.sped504 || null,
-            drg_offense: s.drgOffense || null,
-            days_assigned: s.daysAssigned || 0,
-            credit_days: s.creditDays || 0,
-            comments: s.comments || null
-          });
-        }
-
-        // Transform Attendance
-        for (const a of importedData.attendance) {
-          const map = idMap.get(a.studentId);
-          if (map) {
-            newAttendance.push({
-              id: crypto.randomUUID(),
-              student_id: map.studentUuid,
-              enrollment_id: map.enrollmentUuid,
-              date: a.date,
-              presence: a.presence
-            });
-          }
-        }
-
-        // Import Converted Data
-        await importData({
-          students: newStudents,
-          enrollments: newEnrollments,
-          attendance: newAttendance,
-          holidays: [] // Legacy has no holidays
-        });
-
-        toast.success("Legacy data imported and converted successfully!");
-        setTimeout(() => window.location.reload(), 1500);
+        toast.success(`Legacy data imported! ${convertedData.students.length} students, ${convertedData.enrollments.length} enrollments, ${convertedData.attendance.length} attendance records.`);
+        queryClient.invalidateQueries();
+        resumeSettingsSave();
         return;
       }
 
       throw new Error("Invalid data structure in JSON file.");
     } catch (error) {
-      console.error("Import parsing failed:", error);
-      toast.error(`Import failed. Invalid file format.`);
+      console.error("Import failed:", error);
+      const errorMessage = String(error);
+
+      // Handle specific error types with helpful messages
+      if (errorMessage.includes('database is locked') || errorMessage.includes('code: 5')) {
+        toast.error("Database is busy after multiple retries. Please close and reopen the app, then try again.");
+      } else if (errorMessage.includes('JSON')) {
+        toast.error("Import failed: Invalid JSON file format.");
+      } else {
+        toast.error(`Import failed: ${errorMessage}`);
+      }
+    } finally {
+      // Always restore React Query defaults and resume settings saves
+      queryClient.setDefaultOptions(defaultQueryOptions);
+      resumeSettingsSave();
     }
   };
 
@@ -380,9 +390,119 @@ export const DataManagementPage: React.FC = () => {
       });
   };
 
+  const proceedWithImport = async () => {
+    if (!pendingImportData) return;
+    setShowValidationModal(false);
+
+    try {
+      await importData(pendingImportData);
+      toast.success(`Imported ${validationResult?.summary.studentsCount || 0} students, ${validationResult?.summary.enrollmentsCount || 0} enrollments`);
+      setPendingImportData(null);
+      setValidationResult(null);
+      queryClient.invalidateQueries();
+    } catch (e) {
+      console.error("Import failed:", e);
+      toast.error("Import failed: " + String(e));
+    }
+  };
+
+  const cancelImport = () => {
+    setShowValidationModal(false);
+    setPendingImportData(null);
+    setValidationResult(null);
+  };
+
   return (
     <div className="space-y-8 max-w-4xl mx-auto">
       <RolloverModal isOpen={isRolloverModalOpen} onClose={() => setIsRolloverModalOpen(false)} />
+
+      {/* Import Validation Modal */}
+      {showValidationModal && validationResult && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-2xl w-full p-6 max-h-[80vh] overflow-y-auto">
+            <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4">
+              Import Validation {validationResult.valid ? '✓' : '✗'}
+            </h3>
+
+            {/* Summary */}
+            <div className="bg-slate-50 dark:bg-slate-700 p-4 rounded-lg mb-4">
+              <h4 className="font-semibold text-slate-700 dark:text-slate-200 mb-2">Data Summary</h4>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-brand">{validationResult.summary.studentsCount}</div>
+                  <div className="text-slate-500">Students</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-brand">{validationResult.summary.enrollmentsCount}</div>
+                  <div className="text-slate-500">Enrollments</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-brand">{validationResult.summary.attendanceCount}</div>
+                  <div className="text-slate-500">Attendance</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-brand">{validationResult.summary.holidaysCount}</div>
+                  <div className="text-slate-500">Holidays</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Errors */}
+            {validationResult.errors.length > 0 && (
+              <div className="mb-4">
+                <h4 className="font-semibold text-red-600 dark:text-red-400 mb-2">
+                  Errors ({validationResult.errors.length})
+                </h4>
+                <div className="max-h-40 overflow-y-auto bg-red-50 dark:bg-red-900/20 rounded-lg p-3">
+                  {validationResult.errors.slice(0, 20).map((err, i) => (
+                    <div key={i} className="text-sm text-red-700 dark:text-red-300 py-1">
+                      {err.row !== undefined && <span className="font-mono text-xs mr-2">[Row {err.row}]</span>}
+                      <strong>{err.field}</strong>: {err.message}
+                    </div>
+                  ))}
+                  {validationResult.errors.length > 20 && (
+                    <p className="text-sm text-red-500 italic">...and {validationResult.errors.length - 20} more errors</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Warnings */}
+            {validationResult.warnings.length > 0 && (
+              <div className="mb-4">
+                <h4 className="font-semibold text-amber-600 dark:text-amber-400 mb-2">
+                  Warnings ({validationResult.warnings.length})
+                </h4>
+                <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3">
+                  {validationResult.warnings.map((warn, i) => (
+                    <div key={i} className="text-sm text-amber-700 dark:text-amber-300 py-1">
+                      <strong>{warn.field}</strong>: {warn.message}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={cancelImport}
+                className="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md font-medium"
+              >
+                Cancel
+              </button>
+              {validationResult.valid && (
+                <button
+                  onClick={proceedWithImport}
+                  className="px-4 py-2 bg-brand hover:bg-brand-dark text-white rounded-md font-medium"
+                >
+                  Proceed with Import
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Recalculate School Years Confirmation Modal */}
       {showRecalculateConfirm && (

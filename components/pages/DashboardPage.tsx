@@ -2,10 +2,12 @@ import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useStudents, useCreateStudent } from '../../hooks/useStudents';
 import { useAttendanceRange, useHolidays } from '../../hooks/useAttendance';
-import { useSchoolYears } from '../../hooks/useSchoolYears';
+// import { useSchoolYears } from '../../hooks/useSchoolYears'; // Removed as unused
 import { useSettings } from '../../hooks/useSettings';
 import { StudentStatus, Presence, Student } from '../../types';
-import { toISODateString, getSchoolYearFromDate } from '../../services/dateUtils';
+import { toISODateString } from '../../services/dateUtils';
+import { groupAttendanceByDate, groupAttendanceByStudent } from '../../services/attendanceUtils';
+import { useActiveSchoolYear } from '../../hooks/useActiveSchoolYear';
 import { StatCard } from '../common/StatCard';
 import { AttendanceTrendChart } from '../common/AttendanceTrendChart';
 import { PageLoadingSkeleton } from '../common/SkeletonLoader';
@@ -20,17 +22,9 @@ export const DashboardPage: React.FC = () => {
     const [timePeriod, setTimePeriod] = useState<TimePeriod>('14days');
     const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
 
-    const { data: schoolYears = [] } = useSchoolYears();
+    // const { data: schoolYears = [] } = useSchoolYears(); // Removed as unused
 
-    // Derive school year - prefer manual selection, else auto-detect
-    const schoolYear = useMemo(() => {
-        // If user has selected an active year, use it
-        if (settings.activeSchoolYear) {
-            return settings.activeSchoolYear;
-        }
-        // Otherwise, auto-detect from current date
-        return getSchoolYearFromDate(new Date(), schoolYears);
-    }, [settings.activeSchoolYear, schoolYears]);
+    const schoolYear = useActiveSchoolYear();
 
     // Date range for attendance
     const today = toISODateString(new Date());
@@ -72,7 +66,14 @@ export const DashboardPage: React.FC = () => {
             guardianPhone: s.guardian_phone || '',
             emergencyContactName: s.emergency_contact_name || '',
             emergencyContactPhone: s.emergency_contact_phone || '',
-            customFields: s.custom_fields ? JSON.parse(s.custom_fields) : {},
+            customFields: (() => {
+                try {
+                    return s.custom_fields ? JSON.parse(s.custom_fields) : {};
+                } catch (e) {
+                    console.error('Failed to parse custom_fields for student', s.id, e);
+                    return {};
+                }
+            })(),
         }));
     }, [rawStudents]);
 
@@ -115,8 +116,12 @@ export const DashboardPage: React.FC = () => {
 
         const activeStudents = rawStudents.filter(s => s.status === 'Active');
 
+        // Pre-group attendance data to avoid O(N^2) scans
+        const attendanceByDate = groupAttendanceByDate(attendanceRecords);
+        const attendanceByStudent = groupAttendanceByStudent(attendanceRecords);
+
         // Today's Attendance
-        const todaysAttendance = attendanceRecords.filter(a => a.date === today);
+        const todaysAttendance = attendanceByDate.get(today) || [];
         const presentCount = todaysAttendance.filter(a => a.presence === 'Present').length;
         const attendanceRate = activeStudents.length > 0
             ? Math.round((presentCount / activeStudents.length) * 100)
@@ -124,10 +129,8 @@ export const DashboardPage: React.FC = () => {
 
         // At Risk (>5 absences in the period)
         const atRiskCount = activeStudents.filter(s => {
-            const recentAbsences = attendanceRecords.filter(a =>
-                a.student_id === s.studentId &&
-                a.presence === 'Absent'
-            ).length;
+            const studentRecords = attendanceByStudent.get(s.studentId) || [];
+            const recentAbsences = studentRecords.filter(a => a.presence === 'Absent').length;
             return recentAbsences >= 5;
         }).length;
 
@@ -141,7 +144,7 @@ export const DashboardPage: React.FC = () => {
             // Skip weekends
             if (d.getDay() === 0 || d.getDay() === 6) continue;
 
-            const dayRecords = attendanceRecords.filter(a => a.date === dateStr);
+            const dayRecords = attendanceByDate.get(dateStr) || [];
             chartData.push({
                 date: dateStr,
                 present: dayRecords.filter(a => a.presence === 'Present').length,

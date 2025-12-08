@@ -4,10 +4,8 @@ import {
     getWeekDays,
     getStartOfWeek,
     getSchoolYearFromDate,
-    getDaysAttended,
-    calculateReleaseDateFromRemaining
+    addBusinessDays
 } from './dateUtils';
-import { Presence, AttendanceRecord } from '../types';
 
 // Mock settingsService for formatDateForDisplay tests
 vi.mock('./settingsService', () => ({
@@ -120,56 +118,35 @@ describe('dateUtils', () => {
         });
     });
 
-    describe('getDaysAttended', () => {
-        const mockAttendance: AttendanceRecord[] = [
-            { studentId: 'student-1', date: '2024-01-15', presence: Presence.Present },
-            { studentId: 'student-1', date: '2024-01-16', presence: Presence.Present },
-            { studentId: 'student-1', date: '2024-01-17', presence: Presence.Absent },
-            { studentId: 'student-2', date: '2024-01-15', presence: Presence.Present }
-        ];
+    describe('addBusinessDays', () => {
+        const holidays = new Set([
+            '2024-01-15', // MLK Day
+            '2024-02-19'  // Presidents Day
+        ]);
 
-        it('should count only present days for specific student', () => {
-            expect(getDaysAttended('student-1', mockAttendance)).toBe(2);
+        it('should return same date if 0 days added', () => {
+            const date = new Date('2024-01-10T12:00:00Z');
+            const result = addBusinessDays(date, 0, holidays);
+            expect(toISODateString(result)).toBe('2024-01-10');
         });
 
-        it('should return 0 for student with no records', () => {
-            expect(getDaysAttended('student-999', mockAttendance)).toBe(0);
-        });
-
-        it('should return 0 for empty attendance array', () => {
-            expect(getDaysAttended('student-1', [])).toBe(0);
-        });
-    });
-
-    describe('calculateReleaseDateFromRemaining', () => {
-        const holidays = [
-            { date: '2024-01-15', name: 'MLK Day' },
-            { date: '2024-02-19', name: 'Presidents Day' }
-        ];
-
-        it('should return Completed if 0 days remaining', () => {
-            expect(calculateReleaseDateFromRemaining(0, holidays, '2024-01-10')).toBe('Completed');
-        });
-
-        it('should return Completed if negative days remaining', () => {
-            expect(calculateReleaseDateFromRemaining(-5, holidays, '2024-01-10')).toBe('Completed');
-        });
-
-        it('should skip weekends when calculating', () => {
+        it('should skip weekends', () => {
             // Starting from Friday Jan 12, 2024
-            // 1 day remaining should land on Monday Jan 15 (which is a holiday)
+            // 1 day added should land on Monday Jan 15 (which is a holiday)
             // So it should actually be Tuesday Jan 16
-            const result = calculateReleaseDateFromRemaining(1, holidays, '2024-01-12');
-            expect(result).toBe('2024-01-16');
+            const date = new Date('2024-01-12T12:00:00Z');
+            const result = addBusinessDays(date, 1, holidays);
+            expect(toISODateString(result)).toBe('2024-01-16');
         });
 
-        it('should skip holidays when calculating', () => {
+        it('should skip holidays', () => {
             // Starting from Jan 10 (Wed), 5 school days should skip:
             // - Jan 13-14 (Sat-Sun)
             // - Jan 15 (MLK Day holiday)
             // Result should be Jan 18 (Thu)
-            const result = calculateReleaseDateFromRemaining(5, holidays, '2024-01-10');
-            expect(result).toBe('2024-01-18');
+            const date = new Date('2024-01-10T12:00:00Z');
+            const result = addBusinessDays(date, 5, holidays);
+            expect(toISODateString(result)).toBe('2024-01-18');
         });
 
         it('should calculate correctly with no holidays', () => {
@@ -180,8 +157,9 @@ describe('dateUtils', () => {
             // Day 4: Jan 12 (Fri)
             // Skip: Jan 13-14 (Sat-Sun)
             // Day 5: Jan 15 (Mon)
-            const result = calculateReleaseDateFromRemaining(5, [], '2024-01-08');
-            expect(result).toBe('2024-01-15');
+            const date = new Date('2024-01-08T12:00:00Z');
+            const result = addBusinessDays(date, 5, new Set());
+            expect(toISODateString(result)).toBe('2024-01-15');
         });
     });
 });

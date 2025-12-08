@@ -4,9 +4,12 @@ import {
     getAttendanceByDateRange,
     saveAttendance,
     deleteAttendance,
+    saveAttendanceComment,
+    getStudentAttendanceWithComments,
     getHolidays,
     saveHoliday,
     deleteHoliday,
+    createAuditLog,
     DBAttendance
 } from '../db/queries';
 
@@ -33,9 +36,10 @@ export const useSaveAttendance = () => {
         mutationFn: async (records: DBAttendance[]) => {
             await saveAttendance(records);
         },
-        onSuccess: (_, records) => {
+        onSuccess: async (_, records) => {
             // Invalidate all attendance queries to ensure Daily (single date) and Weekly (range) views both update
             queryClient.invalidateQueries({ queryKey: ['attendance'] });
+            await createAuditLog('Save Attendance', 'Attendance', 'Batch', `Saved ${records.length} records`);
         }
     });
 };
@@ -47,8 +51,9 @@ export const useDeleteAttendance = () => {
         mutationFn: async (data: { studentId: string, date: string }) => {
             await deleteAttendance(data.studentId, data.date);
         },
-        onSuccess: (_, variables) => {
+        onSuccess: async (_, variables) => {
             queryClient.invalidateQueries({ queryKey: ['attendance'] });
+            await createAuditLog('Delete Attendance', 'Attendance', variables.studentId, `Date: ${variables.date}`);
         }
     });
 };
@@ -84,5 +89,28 @@ export const useDeleteHoliday = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['holidays'] });
         }
+    });
+};
+
+export const useSaveAttendanceComment = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (data: { studentId: string; date: string; comment: string | null }) => {
+            await saveAttendanceComment(data.studentId, data.date, data.comment);
+        },
+        onSuccess: async (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['attendance'] });
+            await createAuditLog('Save Comment', 'Attendance', variables.studentId, `Date: ${variables.date}, Comment length: ${variables.comment?.length || 0}`);
+        }
+    });
+};
+
+export const useStudentAttendanceWithComments = (studentId: string) => {
+    return useQuery({
+        queryKey: ['attendanceComments', studentId],
+        queryFn: () => getStudentAttendanceWithComments(studentId),
+        enabled: !!studentId,
+        staleTime: 30 * 1000,
     });
 };

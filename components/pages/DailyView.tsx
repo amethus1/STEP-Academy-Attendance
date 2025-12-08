@@ -1,109 +1,99 @@
 import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { useStudents, useCreateStudent } from '../../hooks/useStudents';
-import { useAttendance, useSaveAttendance, useDeleteAttendance, useHolidays } from '../../hooks/useAttendance';
-import { useSchoolYears } from '../../hooks/useSchoolYears';
+import { useStudents } from '../../hooks/useStudents';
+import { useAttendance, useSaveAttendance, useDeleteAttendance, useHolidays, useSaveAttendanceComment } from '../../hooks/useAttendance';
+import { useActiveSchoolYear } from '../../hooks/useActiveSchoolYear';
 import { useSettings } from '../../hooks/useSettings';
-import { Student, StudentStatus, Presence } from '../../types';
-import { toISODateString, getDaysAttended, calculateReleaseDateFromRemaining, formatDateForDisplay, getSchoolYearFromDate } from '../../services/dateUtils';
+import { StudentStatus, Presence } from '../../types';
+import { toISODateString, formatDateForDisplay } from '../../services/dateUtils';
+import { ExtendedStudent, mapDBStudentToUI, mapDBHolidaysToHolidays } from '../../services/mappers';
 import { StatusBadge } from '../common/StatusBadge';
 import { AttendanceButton } from '../common/AttendanceButton';
 import { PageLoadingSkeleton } from '../common/SkeletonLoader';
+import { DataTable, ColumnDef } from '../common/DataTable';
+import { useStudentFilter } from '../../hooks/useStudentFilter';
 
-type DailyStudent = Student & { daysRemaining: number; projectedReleaseDate: string; };
-type SortKey = keyof DailyStudent | string;
-type AttendanceFilterType = 'All' | 'Present' | 'Absent' | 'Pending';
-
-const dailyViewColumns: { id: SortKey; label: string; }[] = [
-  { id: 'lastName', label: 'Last Name' },
-  { id: 'firstName', label: 'First Name' },
-  { id: 'studentNumber', label: 'ID' },
-  { id: 'campus', label: 'Campus' },
-  { id: 'gradeLevel', label: 'Grade' },
-  { id: 'status', label: 'Status' },
-  { id: 'daysRemaining', label: 'Days Left' },
-  { id: 'projectedReleaseDate', label: 'Release Date' },
-];
+type AttendanceFilterType = 'All' | 'Present' | 'Absent' | 'Tardy' | 'Excused' | 'Pending';
 
 export const DailyView: React.FC = () => {
   const { settings } = useSettings();
-  const { data: schoolYears = [] } = useSchoolYears();
-
   const [selectedDate, setSelectedDate] = useState(toISODateString(new Date()));
 
-  // Derive school year - prefer manual selection, else auto-detect from selected date
-  const schoolYear = React.useMemo(() => {
-    if (settings.activeSchoolYear) {
-      return settings.activeSchoolYear;
-    }
-    return getSchoolYearFromDate(new Date(selectedDate + "T12:00:00Z"), schoolYears);
-  }, [settings.activeSchoolYear, selectedDate, schoolYears]);
+  const schoolYear = useActiveSchoolYear(selectedDate);
 
   const { data: rawStudents, isLoading: studentsLoading } = useStudents(schoolYear);
   const { data: attendanceRecords = [], isLoading: attendanceLoading } = useAttendance(selectedDate);
   const { data: holidays = [] } = useHolidays();
   const { mutate: saveAttendance } = useSaveAttendance();
   const { mutate: deleteAttendance } = useDeleteAttendance();
+  const { mutate: saveComment } = useSaveAttendanceComment();
 
-  // Helper to match types
-  function urlHolidaysToHolidays(hols: any[]) { return hols; }
+  // Convert holidays to UI format once
+  const holidaysUI = useMemo(() => mapDBHolidaysToHolidays(holidays), [holidays]);
 
-  // Flatten students (useSame logic as RosterPage ideally, but simplified here)
+  // Build memoized lookups
+  const attendanceByStudent = useMemo(() => {
+    const map: Record<string, Presence> = {};
+    for (const record of attendanceRecords) {
+      map[record.student_id] = record.presence as Presence;
+    }
+    return map;
+  }, [attendanceRecords]);
+
+  const commentsByStudent = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const record of attendanceRecords) {
+      if (record.comment) {
+        map[record.student_id] = record.comment;
+      }
+    }
+    return map;
+  }, [attendanceRecords]);
+
+  // Transform students
   const studentsInYear = useMemo(() => {
     if (!rawStudents) return [];
-    return rawStudents.map(s => {
-      // Map to student interface expected by UI
-      // Note: checking registration vs school year dates is handled by the Query "getStudentsByYear" mostly.
-      const daysAttended = s.days_attended || 0;
-      const creditDays = s.credit_days || 0;
-      const daysRemaining = Math.max(0, s.days_assigned - daysAttended - creditDays);
+    return rawStudents.map(s => mapDBStudentToUI(s, holidaysUI));
+  }, [rawStudents, holidaysUI]);
 
-      // We need 'entryDate' for filtering 'eligibleOnDate'
-      // 'start_date' from DB is entryDate.
-      const entryDate = s.start_date;
+  // State for editing comments
+  const [editingComment, setEditingComment] = useState<{ studentId: string; value: string } | null>(null);
 
-      // Projected Release
-      // Note: calculateProjectedReleaseDate signature expects Student object. 
-      // We can use our new helper 'calculateReleaseDateFromRemaining'
-      const projectedReleaseDate = calculateReleaseDateFromRemaining(
-        daysRemaining,
-        urlHolidaysToHolidays(holidays),
-        toISODateString(new Date()) // Today as projection start? Or selectedDate? DailyView uses Today usually.
-      );
-
-      return {
-        ...s,
-        id: s.studentId,
-        studentNumber: s.student_number,
-        firstName: s.first_name,
-        lastName: s.last_name,
-        gradeLevel: s.grade_level,
-        sped504: s.sped_504,
-        status: s.status as StudentStatus,
-        entryDate,
-        daysRemaining,
-        projectedReleaseDate,
-        daysAssigned: s.days_assigned,
-        creditDays: s.credit_days,
-        enrollmentId: s.enrollmentId
-      };
-    });
-  }, [rawStudents, holidays]);
-
-  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'lastName', direction: 'asc' });
-  const [searchTerm, setSearchTerm] = useState('');
-
-  // Filters
-  const [statusFilter, setStatusFilter] = useState<StudentStatus | 'All'>(StudentStatus.Active);
+  // Additional Filter State for Attendance
   const [attendanceFilter, setAttendanceFilter] = useState<AttendanceFilterType>('All');
-  const [gradeFilter, setGradeFilter] = useState('All');
-  const [spedFilter, setSpedFilter] = useState('All');
 
-  const gradeLevels = useMemo(
-    () => ['All', ...Array.from(new Set(studentsInYear.map(s => s.gradeLevel).filter(Boolean)))],
-    [studentsInYear]
-  );
-  const spedOptions = ['All', 'None', 'SPED', '504'];
+  // Use Filter Hook
+  const {
+    searchTerm, setSearchTerm,
+    statusFilter, setStatusFilter,
+    gradeFilter, setGradeFilter,
+    spedFilter, setSpedFilter,
+    sortConfig, setSortConfig,
+    filteredStudents: baseFilteredStudents,
+    gradeLevels
+  } = useStudentFilter(studentsInYear);
+
+  // Apply extra filters (Date eligibility + Attendance Status) that are specific to DailyView
+  const finalFilteredStudents = useMemo(() => {
+    return baseFilteredStudents.filter(s => {
+      // Date Eligibility
+      const eligibleOnDate = s.entryDate <= selectedDate;
+      const exitedBefore = s.exitDate && s.exitDate < selectedDate;
+      if (!eligibleOnDate || exitedBefore) return false;
+
+      // Attendance Status Filter
+      const presence = attendanceByStudent[s.id];
+      switch (attendanceFilter) {
+        case 'Present': return presence === Presence.Present;
+        case 'Absent': return presence === Presence.Absent;
+        case 'Tardy': return presence === Presence.Tardy;
+        case 'Excused': return presence === Presence.Excused;
+        case 'Pending': return s.status === StudentStatus.Active && !presence;
+        case 'All': default: return true;
+      }
+    });
+  }, [baseFilteredStudents, selectedDate, attendanceFilter, attendanceByStudent]);
+
 
   const changeDay = (amount: number) => {
     setSelectedDate(prev => {
@@ -113,116 +103,134 @@ export const DailyView: React.FC = () => {
     });
   };
 
-  const sortedAndFilteredStudents = useMemo(() => {
-    let filteredStudents = studentsInYear.filter(s => {
-      // Base filters
-      const eligibleOnDate = s.entryDate <= selectedDate;
-      // Also check exitDate if exists? 
-      // s.end_date is exitDate.
-      const withdrawnBefore = s.end_date && s.end_date < selectedDate;
+  const jumpToToday = () => {
+    setSelectedDate(toISODateString(new Date()));
+  };
 
-      if (!eligibleOnDate || withdrawnBefore) return false;
+  const markAllPresent = () => {
+    if (finalFilteredStudents.length === 0) return;
+    if (!window.confirm(`Mark ${finalFilteredStudents.length} students as Present?`)) return;
 
-      const statusMatch = statusFilter === 'All' || s.status === statusFilter;
-      const gradeMatch = gradeFilter === 'All' || s.gradeLevel === gradeFilter;
-      const spedMatch = spedFilter === 'All' || s.sped504 === spedFilter;
-      const searchMatch = `${s.firstName} ${s.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.id.toLowerCase().includes(searchTerm.toLowerCase());
+    const records = finalFilteredStudents
+      .filter(s => s.status === StudentStatus.Active)
+      .map(s => ({
+        id: crypto.randomUUID(),
+        enrollment_id: s.enrollmentId!,
+        student_id: s.id,
+        date: selectedDate,
+        presence: Presence.Present,
+        comment: null
+      }));
 
-      if (!statusMatch || !gradeMatch || !spedMatch || !searchMatch) return false;
-
-      // Attendance filter
-      // attendanceRecords contains records for THIS date.
-      const record = attendanceRecords.find(a => a.student_id === s.id);
-
-      switch (attendanceFilter) {
-        case 'Present':
-          return record?.presence === 'Present'; // DB uses string 'Present'/'Absent' directly? Presence enum match?
-        // DB schema says "presence TEXT". Check types.ts definition.
-        case 'Absent':
-          return record?.presence === 'Absent';
-        case 'Pending':
-          // Pending only applies to active students on the selected day
-          return s.status === StudentStatus.Active && !record;
-        case 'All':
-        default:
-          return true;
-      }
-    });
-
-    return [...filteredStudents].sort((a, b) => {
-      const aVal = a[sortConfig.key as keyof DailyStudent];
-      const bVal = b[sortConfig.key as keyof DailyStudent];
-      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
-      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-      return 0;
-    });
-
-  }, [studentsInYear, attendanceRecords, statusFilter, attendanceFilter, gradeFilter, spedFilter, selectedDate, sortConfig, searchTerm]);
+    if (records.length > 0) {
+      saveAttendance(records);
+    }
+  };
 
   const handleMarkAttendance = (studentId: string, currentPresence: Presence | undefined, targetPresence: Presence) => {
-    // If clicking same, toggle to null (delete).
-    // If clicking different, update.
     const newPresence = currentPresence === targetPresence ? null : targetPresence;
-
-    // DB save expects array of records.
-    // If newPresence is null, we might need a delete operation?
-    // saveAttendance (upsert) usually handles update/insert.
-    // If we want to DELETE, we might need a specific delete function or pass null?
-    // DB schema: presence is NOT NULL? Schema says "presence TEXT NOT NULL".
-    // So if we toggle off, we should DELETE the row.
-    // useSaveAttendance calls saveAttendance.
-    // We need `deleteAttendance` or handle it in `saveAttendance`?
-    // `saveAttendance` performs upsert (INSERT OR REPLACE).
-    // To delete, we need to add `deleteAttendance` to queries.
-    // For now, let's assume we can't delete via this generic save, or simple logic:
-
     if (newPresence === null) {
       deleteAttendance({ studentId, date: selectedDate });
-      return;
+    } else {
+      saveAttendance([{
+        id: crypto.randomUUID(),
+        enrollment_id: studentsInYear.find(s => s.id === studentId)?.enrollmentId!,
+        student_id: studentId,
+        date: selectedDate,
+        presence: newPresence,
+        comment: null
+      }]);
     }
-
-    saveAttendance([{
-      id: crypto.randomUUID(),
-      enrollment_id: studentsInYear.find(s => s.id === studentId)?.enrollmentId!,
-      student_id: studentId,
-      date: selectedDate,
-      presence: newPresence
-    }]);
   };
 
-  const requestSort = (key: SortKey) => {
-    let direction: 'asc' | 'desc' = 'asc';
-    if (sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
-    }
-    setSortConfig({ key, direction });
-  };
-
-  const getCellValue = (student: DailyStudent, columnId: SortKey) => {
-    switch (columnId) {
-      case 'lastName':
-        return <Link to={`/student/${student.id}`} className="hover:underline text-brand-dark dark:text-brand-light">{student.lastName}</Link>;
-      case 'firstName':
-        return student.firstName;
-      case 'studentNumber':
-        return student.studentNumber || student.id;
-      case 'campus':
-        return student.campus;
-      case 'gradeLevel':
-        return student.gradeLevel;
-      case 'status':
-        return <StatusBadge status={student.status} />;
-      case 'daysRemaining':
-        return <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${student.daysRemaining > 10 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{student.daysRemaining}</span>
-      case 'projectedReleaseDate': {
-        const dateVal = student.projectedReleaseDate;
-        return dateVal && dateVal !== 'N/A' && dateVal !== 'Completed' ? formatDateForDisplay(dateVal as string) : dateVal;
+  // Defining Columns
+  const columns: ColumnDef<ExtendedStudent>[] = [
+    {
+      id: 'lastName',
+      label: 'Last Name',
+      sortable: true,
+      render: (s) => <Link to={`/student/${s.id}`} className="hover:underline text-brand-dark dark:text-brand-light">{s.lastName}</Link>
+    },
+    { id: 'firstName', label: 'First Name', sortable: true },
+    { id: 'studentNumber', label: 'ID', sortable: true, render: (s) => s.studentNumber || s.id },
+    { id: 'campus', label: 'Campus', sortable: true },
+    { id: 'gradeLevel', label: 'Grade', sortable: true },
+    { id: 'status', label: 'Status', sortable: true, render: (s) => <StatusBadge status={s.status} /> },
+    {
+      id: 'daysRemaining',
+      label: 'Days Left',
+      sortable: true,
+      render: (s) => (
+        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${s.daysRemaining > 10 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+          {s.daysRemaining}
+        </span>
+      )
+    },
+    {
+      id: 'projectedReleaseDate',
+      label: 'Release Date',
+      sortable: true,
+      render: (s) => {
+        const val = s.projectedReleaseDate;
+        return val && val !== 'N/A' && val !== 'Completed' ? formatDateForDisplay(val) : val;
       }
-      default:
-        return student[columnId as keyof DailyStudent] as string | number;
+    },
+    {
+      id: 'attendance',
+      label: 'Attendance',
+      align: 'center',
+      render: (s) => {
+        const currentPresence = attendanceByStudent[s.id];
+        const isDisabled = s.status !== StudentStatus.Active;
+        if (isDisabled) return <span className="text-sm text-slate-400 dark:text-slate-500">N/A</span>;
+
+        return (
+          <div className="flex justify-center items-center gap-2">
+            {[Presence.Present, Presence.Tardy, Presence.Excused, Presence.Absent].map(p => (
+              <AttendanceButton
+                key={p}
+                currentPresence={currentPresence}
+                targetPresence={p}
+                onClick={() => handleMarkAttendance(s.id, currentPresence, p)}
+              />
+            ))}
+          </div>
+        );
+      }
+    },
+    {
+      id: 'notes',
+      label: 'Notes',
+      width: 'w-64',
+      render: (s) => {
+        const currentPresence = attendanceByStudent[s.id];
+        const isDisabled = s.status !== StudentStatus.Active;
+        if (isDisabled || !currentPresence) return <span className="text-sm text-slate-400 dark:text-slate-500 italic">—</span>;
+
+        return (
+          <input
+            type="text"
+            placeholder="Add note..."
+            defaultValue={commentsByStudent[s.id] || ''}
+            onFocus={(e) => setEditingComment({ studentId: s.id, value: e.target.value })}
+            onChange={(e) => setEditingComment({ studentId: s.id, value: e.target.value })}
+            onBlur={(e) => {
+              const newComment = e.target.value.trim();
+              const oldComment = commentsByStudent[s.id] || '';
+              if (newComment !== oldComment) {
+                saveComment({ studentId: s.id, date: selectedDate, comment: newComment || null });
+              }
+              setEditingComment(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur();
+            }}
+            className="w-full px-2 py-1 text-sm border border-slate-200 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 placeholder:text-slate-400 focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none"
+          />
+        );
+      }
     }
-  }
+  ];
 
   const loading = studentsLoading || attendanceLoading;
 
@@ -241,8 +249,13 @@ export const DailyView: React.FC = () => {
             className="p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white"
           />
           <button onClick={() => changeDay(1)} className="px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-50 dark:hover:bg-slate-600">Next Day</button>
+          <button onClick={jumpToToday} className="ml-2 px-3 py-2 text-brand hover:underline text-sm font-medium">Jump to Today</button>
         </div>
+        <button onClick={markAllPresent} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-md shadow-sm transition-colors">
+          Mark All Present
+        </button>
       </div>
+
       <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow-sm flex items-center gap-4 flex-wrap">
         <input
           type="text"
@@ -266,6 +279,8 @@ export const DailyView: React.FC = () => {
             <option value="All">All</option>
             <option value="Present">Present</option>
             <option value="Absent">Absent</option>
+            <option value="Tardy">Tardy</option>
+            <option value="Excused">Excused</option>
             <option value="Pending">Pending</option>
           </select>
         </div>
@@ -278,65 +293,22 @@ export const DailyView: React.FC = () => {
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium">SPED/504:</label>
           <select value={spedFilter} onChange={e => setSpedFilter(e.target.value)} className="p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white">
-            {spedOptions.map(s => <option key={s} value={s}>{s}</option>)}
+            <option value="All">All</option>
+            <option value="None">None</option>
+            <option value="SPED">SPED</option>
+            <option value="504">504</option>
           </select>
         </div>
       </div>
-      <div className="bg-white dark:bg-slate-900 rounded-lg shadow-sm overflow-x-auto">
-        <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
-          <thead className="bg-slate-50 dark:bg-slate-800">
-            <tr>
-              {dailyViewColumns.map(col => (
-                <th
-                  key={col.id}
-                  onClick={() => requestSort(col.id)}
-                  className="py-3 px-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider cursor-pointer whitespace-nowrap"
-                >
-                  {col.label} {sortConfig.key === col.id ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
-                </th>
-              ))}
-              <th className="py-3 px-4 text-center text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Attendance</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white dark:bg-slate-900 divide-y divide-slate-200 dark:divide-slate-700">
-            {sortedAndFilteredStudents.map(student => {
-              const attendanceRecord = attendanceRecords.find(a => a.student_id === student.id);
-              const isDisabled = student.status !== StudentStatus.Active;
 
-              return (
-                <tr key={student.id} className="hover:bg-slate-50 dark:hover:bg-slate-800">
-                  {dailyViewColumns.map(col => (
-                    <td key={col.id} className="py-3 px-4 whitespace-nowrap text-sm text-slate-800 dark:text-slate-100">
-                      {getCellValue(student, col.id)}
-                    </td>
-                  ))}
-                  <td className="py-3 px-4 whitespace-nowrap">
-                    <div className="flex justify-center items-center gap-4">
-                      {isDisabled ? (
-                        <span className="text-sm text-slate-400 dark:text-slate-500">N/A</span>
-                      ) : (
-                        <>
-                          <AttendanceButton
-                            currentPresence={attendanceRecord?.presence as Presence}
-                            targetPresence={Presence.Present}
-                            onClick={() => handleMarkAttendance(student.id, attendanceRecord?.presence as Presence, Presence.Present)}
-                          />
-                          <AttendanceButton
-                            currentPresence={attendanceRecord?.presence as Presence}
-                            targetPresence={Presence.Absent}
-                            onClick={() => handleMarkAttendance(student.id, attendanceRecord?.presence as Presence, Presence.Absent)}
-                          />
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {sortedAndFilteredStudents.length === 0 && <p className="text-center p-8 text-slate-500 dark:text-slate-400">No students match the current filter.</p>}
-      </div>
+      <DataTable
+        data={finalFilteredStudents}
+        columns={columns}
+        keyExtractor={(s) => s.id}
+        sortConfig={sortConfig}
+        onSort={(key) => setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc' }))}
+        emptyMessage="No students match the current filter."
+      />
     </div>
   );
 };

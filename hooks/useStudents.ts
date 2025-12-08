@@ -18,13 +18,7 @@ import {
     UniqueStudentSearchOptions
 } from '../db/queries';
 
-export const useSchoolYears = () => {
-    return useQuery({
-        queryKey: ['schoolYears'],
-        queryFn: getSchoolYears,
-        staleTime: 5 * 60 * 1000, // 5 minutes
-    });
-};
+
 
 export const useStudents = (options: string | StudentSearchOptions) => {
     const isLegacy = typeof options === 'string';

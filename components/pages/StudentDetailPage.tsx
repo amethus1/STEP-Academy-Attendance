@@ -1,18 +1,21 @@
 import React, { useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 import { useStudentDetails, useUpdateStudent, useUpdateEnrollment, useCreateStudent, useStudentEnrollments } from '../../hooks/useStudents';
 import { useSchoolYears } from '../../hooks/useSchoolYears';
 import { useSettings } from '../../hooks/useSettings';
-import { useHolidays } from '../../hooks/useAttendance';
+import { useHolidays, useStudentAttendanceWithComments } from '../../hooks/useAttendance';
 import { Student, StudentStatus, CustomFieldDefinition } from '../../types';
-import { calculateReleaseDateFromRemaining, getDaysAttended, toISODateString, formatDateForDisplay, getSchoolYearFromDate } from '../../services/dateUtils';
+import { toISODateString, formatDateForDisplay, getSchoolYearFromDate } from '../../services/dateUtils';
+import { calculateDaysRemaining, calculateProjectedReleaseDate } from '../../services/studentLogic';
 import { mapDBHolidaysToHolidays, mapEnrollmentToUI, EnrollmentUI } from '../../services/mappers';
 import { StudentFormModal } from '../common/StudentFormModal';
 import { AttendanceCalendar } from '../common/AttendanceCalendar';
 import { EnrollmentHistorySection } from './EnrollmentHistorySection';
 import { PencilIcon, PrinterIcon, UserCircleIcon, PhoneIcon, ArrowPathIcon } from '../icons/Icons';
 import { DBStudent, DBEnrollment } from '../../db/queries';
+import { AttendanceList } from '../student/AttendanceList';
 
 const StatCard: React.FC<{ label: string, value: string | number }> = ({ label, value }) => (
   <div className="bg-white dark:bg-slate-800 p-4 rounded-lg text-center shadow-sm print:shadow-none print:border print:border-slate-200">
@@ -43,6 +46,57 @@ const ContactInfoCard: React.FC<{ student: Student }> = ({ student }) => (
   </div>
 );
 
+const DailyNotesSection: React.FC<{ studentId: string }> = ({ studentId }) => {
+  const { data: notesRecords = [], isLoading } = useStudentAttendanceWithComments(studentId);
+
+  if (isLoading) {
+    return (
+      <div className="bg-white dark:bg-slate-900 p-6 rounded-lg shadow-sm">
+        <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">Daily Notes</h3>
+        <p className="text-slate-500">Loading...</p>
+      </div>
+    );
+  }
+
+  if (notesRecords.length === 0) {
+    return null; // Don't show section if no notes
+  }
+
+  const getPresenceBadge = (presence: string) => {
+    switch (presence) {
+      case 'Present':
+        return <span className="px-2 py-0.5 text-xs rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">Present</span>;
+      case 'Absent':
+        return <span className="px-2 py-0.5 text-xs rounded-full bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300">Absent</span>;
+      case 'Tardy':
+        return <span className="px-2 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">Tardy</span>;
+      case 'Excused':
+        return <span className="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">Excused</span>;
+      default:
+        return <span className="px-2 py-0.5 text-xs rounded-full bg-slate-100 text-slate-700">{presence}</span>;
+    }
+  };
+
+  return (
+    <div className="bg-white dark:bg-slate-900 p-6 rounded-lg shadow-sm print:shadow-none print:border print:border-slate-200">
+      <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">Daily Notes</h3>
+      <div className="space-y-3">
+        {notesRecords.map((record) => (
+          <div key={record.id} className="flex items-start gap-4 p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+            <div className="flex-shrink-0 text-sm">
+              <div className="font-medium text-slate-700 dark:text-slate-200">{formatDateForDisplay(record.date)}</div>
+              <div className="mt-1">{getPresenceBadge(record.presence)}</div>
+            </div>
+            <div className="flex-1 text-sm text-slate-600 dark:text-slate-300">
+              {record.comment}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 export const StudentDetailPage: React.FC = () => {
   const { studentId } = useParams<{ studentId: string }>();
   // Use new hook
@@ -59,6 +113,13 @@ export const StudentDetailPage: React.FC = () => {
   const [showReenrollModal, setShowReenrollModal] = useState(false);
   const [projectionMethod, setProjectionMethod] = useState<'entryDate' | 'today'>('today');
   const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<string | null>(null);
+
+  // Controlled state for re-enroll form
+  const [reenrollEntryDate, setReenrollEntryDate] = useState(toISODateString(new Date()));
+  const [reenrollGrade, setReenrollGrade] = useState('9');
+  const [reenrollDays, setReenrollDays] = useState(45);
+
+  const queryClient = useQueryClient();
 
   const customFieldDefinitions = settings.customFieldDefinitions || [];
 
@@ -172,13 +233,13 @@ export const StudentDetailPage: React.FC = () => {
 
   const daysAttended = filteredAttendance.filter(a => a.presence === 'Present').length;
   const creditDays = uiStudent.creditDays || 0;
-  const daysRemaining = Math.max(0, uiStudent.daysAssigned - daysAttended - creditDays);
+  const daysRemaining = calculateDaysRemaining(uiStudent.daysAssigned, daysAttended, creditDays);
 
   // Convert DB holidays to UI format using centralized mapper
   const holidaysUI = mapDBHolidaysToHolidays(holidays);
 
   const projectionStartDate = projectionMethod === 'today' ? toISODateString(new Date()) : displayEntryDate;
-  const projectedReleaseDateISO = calculateReleaseDateFromRemaining(daysRemaining, holidaysUI, projectionStartDate);
+  const projectedReleaseDateISO = calculateProjectedReleaseDate(daysRemaining, holidaysUI, projectionStartDate, uiStudent.status);
   const projectedReleaseDate = projectedReleaseDateISO !== 'N/A' && projectedReleaseDateISO !== 'Completed' ? formatDateForDisplay(projectedReleaseDateISO) : projectedReleaseDateISO;
 
   const handlePrint = async () => {
@@ -346,6 +407,8 @@ export const StudentDetailPage: React.FC = () => {
             <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">Comments</h3>
             <p className="text-slate-600 dark:text-slate-300 whitespace-pre-wrap text-sm">{uiStudent.comments || "No comments."}</p>
           </div>
+
+          <AttendanceList attendance={filteredAttendance} />
         </div>
 
         {/* Right Column - Details */}
@@ -401,6 +464,9 @@ export const StudentDetailPage: React.FC = () => {
               </dl>
             </div>
           }
+
+          {/* Daily Notes Section */}
+          <DailyNotesSection studentId={studentId!} />
         </div>
       </div>
 
@@ -420,8 +486,8 @@ export const StudentDetailPage: React.FC = () => {
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Entry Date</label>
                 <input
                   type="date"
-                  id="reenroll-entry-date"
-                  defaultValue={toISODateString(new Date())}
+                  value={reenrollEntryDate}
+                  onChange={(e) => setReenrollEntryDate(e.target.value)}
                   className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white"
                 />
               </div>
@@ -429,8 +495,8 @@ export const StudentDetailPage: React.FC = () => {
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Grade Level</label>
                 <select
-                  id="reenroll-grade"
-                  defaultValue={uiStudent.gradeLevel || '9'}
+                  value={reenrollGrade}
+                  onChange={(e) => setReenrollGrade(e.target.value)}
                   className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white"
                 >
                   {['6', '7', '8', '9', '10', '11', '12'].map(g => (
@@ -443,8 +509,8 @@ export const StudentDetailPage: React.FC = () => {
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Days Assigned</label>
                 <input
                   type="number"
-                  id="reenroll-days"
-                  defaultValue={45}
+                  value={reenrollDays}
+                  onChange={(e) => setReenrollDays(parseInt(e.target.value) || 45)}
                   min={1}
                   max={365}
                   className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white"
@@ -462,11 +528,7 @@ export const StudentDetailPage: React.FC = () => {
               <button
                 onClick={async () => {
                   try {
-                    const newEntryDate = (document.getElementById('reenroll-entry-date') as HTMLInputElement).value;
-                    const newGrade = (document.getElementById('reenroll-grade') as HTMLSelectElement).value;
-                    const newDaysAssigned = parseInt((document.getElementById('reenroll-days') as HTMLInputElement).value) || 45;
-
-                    const schoolYear = getSchoolYearFromDate(new Date(newEntryDate), schoolYears);
+                    const schoolYear = getSchoolYearFromDate(new Date(reenrollEntryDate), schoolYears);
 
                     const profile: DBStudent = {
                       id: uiStudent.id,
@@ -486,22 +548,24 @@ export const StudentDetailPage: React.FC = () => {
                       id: crypto.randomUUID(),
                       student_id: uiStudent.id,
                       school_year: schoolYear,
-                      start_date: newEntryDate,
+                      start_date: reenrollEntryDate,
                       end_date: null,
-                      grade_level: newGrade,
+                      grade_level: reenrollGrade,
                       campus: uiStudent.campus || '',
                       status: 'Active',
                       sped_504: uiStudent.sped504 || null,
                       drg_offense: uiStudent.drgOffense || null,
-                      days_assigned: newDaysAssigned,
+                      days_assigned: reenrollDays,
                       credit_days: 0,
-                      comments: `Re-enrolled on ${newEntryDate}`
+                      comments: `Re-enrolled on ${reenrollEntryDate}`
                     };
 
                     await createStudent({ student: profile, enrollment });
                     toast.success(`${uiStudent.firstName} ${uiStudent.lastName} has been re-enrolled!`);
                     setShowReenrollModal(false);
-                    window.location.reload();
+                    // Invalidate queries to refresh data instead of full page reload
+                    queryClient.invalidateQueries({ queryKey: ['student', studentId] });
+                    queryClient.invalidateQueries({ queryKey: ['students'] });
                   } catch (e) {
                     console.error('Re-enroll failed:', e);
                     toast.error('Failed to re-enroll student. Please try again.');

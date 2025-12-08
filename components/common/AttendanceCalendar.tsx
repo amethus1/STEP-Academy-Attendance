@@ -45,6 +45,14 @@ const CalendarDay: React.FC<{
                 colorClass = "bg-rose-500 text-white";
                 tooltipText += ": Absent";
                 break;
+            case Presence.Tardy:
+                colorClass = "bg-amber-500 text-white";
+                tooltipText += ": Tardy";
+                break;
+            case Presence.Excused:
+                colorClass = "bg-blue-500 text-white";
+                tooltipText += ": Excused";
+                break;
             default:
                 colorClass = "bg-slate-300 dark:bg-slate-600 text-slate-700 dark:text-slate-200"; // Pending
                 tooltipText += ": Pending";
@@ -149,6 +157,8 @@ export const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({ attendan
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-6 text-xs text-slate-500 dark:text-slate-400">
                 <span>Legend:</span>
                 <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-sm bg-emerald-500"></div> Present</div>
+                <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-sm bg-amber-500"></div> Tardy</div>
+                <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-sm bg-blue-500"></div> Excused</div>
                 <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-sm bg-rose-500"></div> Absent</div>
                 <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-sm bg-yellow-400"></div> Holiday</div>
                 <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-sm bg-slate-300 dark:bg-slate-600"></div> Pending</div>
