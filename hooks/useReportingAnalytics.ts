@@ -83,7 +83,10 @@ export const useReportingAnalytics = ({
 
                     if (!attendanceByDate[dateStr]) attendanceByDate[dateStr] = { present: 0, absent: 0 };
 
-                    if (record?.presence === 'Present') {
+                    // Tardies count as attended (the student was present), matching the
+                    // days_attended calculation in db/studentQueries.ts. Excused absences
+                    // are tracked separately and do not penalize the attendance rate.
+                    if (record?.presence === 'Present' || record?.presence === 'Tardy') {
                         totalPresent++;
                         campusStats[campus].present++;
                         gradeStats[grade].present++;
@@ -92,7 +95,6 @@ export const useReportingAnalytics = ({
                         absences++;
                         attendanceByDate[dateStr].absent++;
                     }
-                    // 'Late' or 'Excused' logic could go here
                 }
                 currentDate.setDate(currentDate.getDate() + 1);
             }

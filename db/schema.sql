@@ -1,6 +1,7 @@
 -- Enable WAL mode for better concurrent access
 PRAGMA journal_mode = WAL;
 PRAGMA busy_timeout = 5000;
+PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS students (
   id TEXT PRIMARY KEY,
@@ -63,7 +64,7 @@ CREATE INDEX IF NOT EXISTS idx_students_names ON students(last_name, first_name)
 
 CREATE TABLE IF NOT EXISTS school_years (
   id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
+  name TEXT NOT NULL UNIQUE,
   start_date TEXT NOT NULL,
   end_date TEXT NOT NULL
 );

@@ -126,10 +126,88 @@ const MIGRATIONS: Migration[] = [
         sql: `
         -- Insert default school years (current + 2 years back)
         -- Uses INSERT OR IGNORE to avoid duplicates if already exists
-        INSERT OR IGNORE INTO school_years (id, name, start_date, end_date) VALUES 
+        INSERT OR IGNORE INTO school_years (id, name, start_date, end_date) VALUES
             (lower(hex(randomblob(16))), '2023-2024', '2023-08-01', '2024-07-31'),
             (lower(hex(randomblob(16))), '2024-2025', '2024-08-01', '2025-07-31'),
             (lower(hex(randomblob(16))), '2025-2026', '2025-08-01', '2026-07-31');
+        `
+    },
+    {
+        version: 6,
+        name: 'Add UNIQUE constraint to school_years.name',
+        sql: `
+        -- Recreate school_years table with UNIQUE(name) constraint
+        CREATE TABLE school_years_new (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL
+        );
+
+        INSERT INTO school_years_new SELECT * FROM school_years;
+        DROP TABLE school_years;
+        ALTER TABLE school_years_new RENAME TO school_years;
+
+        CREATE INDEX idx_school_years_dates ON school_years(start_date, end_date);
+        `
+    },
+    {
+        version: 7,
+        name: 'Enable Foreign Key Constraints with Cascading Deletes',
+        sql: `
+        -- Disable FK enforcement during the rebuild so DROP TABLE does not
+        -- cascade or fail. db/index.ts re-enables it on the next connection.
+        PRAGMA foreign_keys = OFF;
+
+        -- Recreate enrollments table with ON DELETE CASCADE
+        CREATE TABLE enrollments_new (
+            id TEXT PRIMARY KEY,
+            student_id TEXT NOT NULL,
+            school_year TEXT NOT NULL,
+            start_date TEXT NOT NULL,
+            end_date TEXT,
+            grade_level TEXT NOT NULL,
+            campus TEXT,
+            status TEXT NOT NULL,
+            sped_504 TEXT,
+            drg_offense TEXT,
+            days_assigned INTEGER NOT NULL DEFAULT 45,
+            credit_days INTEGER NOT NULL DEFAULT 0,
+            comments TEXT,
+            FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
+        );
+
+        INSERT INTO enrollments_new SELECT * FROM enrollments;
+        DROP TABLE enrollments;
+        ALTER TABLE enrollments_new RENAME TO enrollments;
+
+        CREATE INDEX idx_enrollments_student_id ON enrollments(student_id);
+        CREATE INDEX idx_enrollments_school_year ON enrollments(school_year);
+        CREATE INDEX idx_enrollments_status ON enrollments(status);
+
+        -- Recreate attendance table with ON DELETE CASCADE
+        CREATE TABLE attendance_new (
+            id TEXT PRIMARY KEY,
+            student_id TEXT NOT NULL,
+            enrollment_id TEXT NOT NULL,
+            date TEXT NOT NULL,
+            presence TEXT NOT NULL,
+            comment TEXT,
+            FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE,
+            FOREIGN KEY(enrollment_id) REFERENCES enrollments(id) ON DELETE CASCADE,
+            UNIQUE(student_id, date)
+        );
+
+        INSERT INTO attendance_new SELECT * FROM attendance;
+        DROP TABLE attendance;
+        ALTER TABLE attendance_new RENAME TO attendance;
+
+        CREATE INDEX idx_attendance_enrollment_id ON attendance(enrollment_id);
+        CREATE INDEX idx_attendance_student_id ON attendance(student_id);
+        CREATE INDEX idx_attendance_date ON attendance(date);
+
+        -- Re-enable FK enforcement for the rest of the current session.
+        PRAGMA foreign_keys = ON;
         `
     }
 ];

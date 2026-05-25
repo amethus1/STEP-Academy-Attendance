@@ -1,4 +1,5 @@
 import React, { createContext, useState, useEffect, useContext, ReactNode, useCallback, useRef } from 'react';
+import { toast } from 'sonner';
 import { AppSettings } from '../types';
 import * as settingsService from '../services/settingsService';
 
@@ -65,6 +66,7 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     if (pendingSettingsRef.current) {
       settingsService.saveSettings(pendingSettingsRef.current).catch(error => {
         console.error('Failed to persist pending settings:', error);
+        toast.error('Failed to save settings after import. Your last change may not have persisted.');
       });
       pendingSettingsRef.current = null;
     }
@@ -93,6 +95,7 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
         if (pendingSettingsRef.current && !isPausedRef.current) {
           settingsService.saveSettings(pendingSettingsRef.current).catch(error => {
             console.error('Failed to persist settings:', error);
+            toast.error('Failed to save settings. Your last change may not have persisted.');
           });
           pendingSettingsRef.current = null;
         }
