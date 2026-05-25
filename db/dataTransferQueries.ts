@@ -53,6 +53,30 @@ export const importData = async (data: {
     try {
         const db = await getDb();
 
+        // Snapshot counts of what we're about to overwrite so an audit-log
+        // reader can see exactly what was replaced (useful for recovery if
+        // the import was unintentional).
+        const [
+            [{ count: studentsBefore }],
+            [{ count: enrollmentsBefore }],
+            [{ count: attendanceBefore }],
+            [{ count: holidaysBefore }],
+            [{ count: schoolYearsBefore }]
+        ] = await Promise.all([
+            db.select<{ count: number }[]>("SELECT COUNT(*) as count FROM students"),
+            db.select<{ count: number }[]>("SELECT COUNT(*) as count FROM enrollments"),
+            db.select<{ count: number }[]>("SELECT COUNT(*) as count FROM attendance"),
+            db.select<{ count: number }[]>("SELECT COUNT(*) as count FROM holidays"),
+            db.select<{ count: number }[]>("SELECT COUNT(*) as count FROM school_years")
+        ]);
+
+        await createAuditLog(
+            'Import Started',
+            'System',
+            null,
+            `Replacing existing data: ${studentsBefore} students, ${enrollmentsBefore} enrollments, ${attendanceBefore} attendance records, ${holidaysBefore} holidays, ${schoolYearsBefore} school years`
+        );
+
         // Clear existing data (order matters due to foreign keys)
         await db.execute("DELETE FROM attendance");
         await db.execute("DELETE FROM enrollments");

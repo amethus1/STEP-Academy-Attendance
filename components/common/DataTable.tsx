@@ -29,7 +29,7 @@ interface DataTableProps<T> {
     pageSize?: number;
     onPageSizeChange?: (size: number) => void;
     pageSizeOptions?: number[];
-    emptyMessage?: string;
+    emptyMessage?: ReactNode;
 }
 
 export function DataTable<T>({

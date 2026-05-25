@@ -13,7 +13,7 @@ import { exportToCsv } from '../../services/csvService';
 import { StudentFormModal } from '../common/StudentFormModal';
 import { StatusBadge } from '../common/StatusBadge';
 import { PageLoadingSkeleton } from '../common/SkeletonLoader';
-import { DocumentArrowDownIcon } from '../icons/Icons';
+import { DocumentArrowDownIcon, SpinnerIcon } from '../icons/Icons';
 import { DataTable, ColumnDef } from '../common/DataTable';
 
 type SortKey = keyof UniqueStudentUI | string;
@@ -490,14 +490,25 @@ export const RosterPage: React.FC = () => {
       <ColumnConfigModal isOpen={isConfigModalOpen} onClose={() => setIsConfigModalOpen(false)} allColumns={allColumns} visibleColumns={rosterVisibleColumns} columnOrder={rosterColumnOrder} onConfigChange={handleConfigChange} />
 
       <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow-sm flex justify-between items-center gap-4 flex-wrap">
-        <input
-          type="search"
-          aria-label="Search students by name or ID"
-          placeholder="Search by name or ID..."
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
-          className="w-full md:w-1/3 p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white"
-        />
+        <div className="relative w-full md:w-1/3">
+          <input
+            type="search"
+            aria-label="Search students by name or ID"
+            placeholder="Search by name or ID..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            className="w-full p-2 pr-9 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white"
+          />
+          {searchTerm !== debouncedSearchTerm && (
+            <span
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+              aria-hidden="true"
+              title="Searching..."
+            >
+              <SpinnerIcon className="h-4 w-4" />
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
             <button onClick={() => setProjectionMethod('today')} className={`px-3 py-1 text-sm font-semibold rounded-md transition-colors ${projectionMethod === 'today' ? 'bg-white dark:bg-slate-700 text-brand dark:text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>Project from Today</button>
@@ -542,7 +553,13 @@ export const RosterPage: React.FC = () => {
         onPageChange={goToPage}
         pageSize={pageSize}
         onPageSizeChange={(size) => { setPageSize(size); setCurrentPage(1); }}
-        emptyMessage="No students found."
+        emptyMessage={
+          debouncedSearchTerm || filters.status !== 'All' || filters.campus !== 'All' || filters.gradeLevel !== 'All' || filters.sped504 !== 'All' || filters.entryDateFrom || filters.entryDateTo
+            ? 'No students match the current search or filters. Try clearing them to see all students.'
+            : selectedSchoolYear === 'All'
+              ? 'No students have been added yet. Click "Add Student" to create the first record.'
+              : `No students are enrolled in ${selectedSchoolYear}. Switch the school year or add a student.`
+        }
       />
     </div>
   );
