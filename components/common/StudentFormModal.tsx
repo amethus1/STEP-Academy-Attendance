@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Student, CustomFieldDefinition } from '../../types';
 import { useDeleteStudent } from '../../hooks/useStudents';
 import { useStudentForm } from '../../hooks/useStudentForm';
-import { ExclamationTriangleIcon } from '../icons/Icons';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { ExclamationTriangleIcon, SpinnerIcon } from '../icons/Icons';
 import { StudentPhotoUpload } from './student-form/StudentPhotoUpload';
 import { StudentPersonalDetails } from './student-form/StudentPersonalDetails';
 import { StudentEnrollmentDetails } from './student-form/StudentEnrollmentDetails';
@@ -39,7 +40,9 @@ export const StudentFormModal: React.FC<StudentFormModalProps> = ({
   } = useStudentForm(studentToEdit, existingStudents, isOpen);
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const { mutate: deleteStudent } = useDeleteStudent();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { mutate: deleteStudent, isPending: isDeletePending } = useDeleteStudent();
+  const dialogRef = useFocusTrap<HTMLDivElement>(isOpen && !showDeleteConfirm, onClose);
 
   const handleDelete = () => {
     if (studentToEdit?.id) {
@@ -50,23 +53,37 @@ export const StudentFormModal: React.FC<StudentFormModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     if (validate()) {
+      setIsSubmitting(true);
       const finalData = {
         ...formData,
         studentNumber: formData.studentNumber || formData.id
       };
-      onSave(finalData);
-      onClose();
+      try {
+        onSave(finalData);
+        onClose();
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
 
   if (!isOpen) return null;
 
+  const titleId = 'student-form-modal-title';
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col dark:bg-slate-800">
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4" role="presentation">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col dark:bg-slate-800"
+      >
         <header className="p-6 border-b border-slate-200 dark:border-slate-700">
-          <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{isEditMode ? 'Edit Student' : 'Add New Student'}</h2>
+          <h2 id={titleId} className="text-2xl font-bold text-slate-800 dark:text-slate-100">{isEditMode ? 'Edit Student' : 'Add New Student'}</h2>
         </header>
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6">
 
@@ -123,20 +140,37 @@ export const StudentFormModal: React.FC<StudentFormModalProps> = ({
             ))}
           </div>
         </form>
-        <footer className="p-4 bg-slate-50 dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
-          <button type="button" onClick={onClose} className="px-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-50 dark:hover:bg-slate-600">Cancel</button>
+        <footer className="p-4 bg-slate-50 dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="w-full sm:w-auto px-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-50 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Cancel
+          </button>
 
           {isEditMode && (
             <button
               type="button"
               onClick={() => setShowDeleteConfirm(true)}
-              className="px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800 font-semibold rounded-md hover:bg-red-200 dark:hover:bg-red-900/50 mr-auto"
+              disabled={isSubmitting || isDeletePending}
+              className="w-full sm:w-auto px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800 font-semibold rounded-md hover:bg-red-200 dark:hover:bg-red-900/50 sm:mr-auto disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Delete Student
             </button>
           )}
 
-          <button type="submit" onClick={handleSubmit} className="px-4 py-2 bg-brand hover:bg-brand-dark text-white font-semibold rounded-md shadow-sm">Save Student</button>
+          <button
+            type="submit"
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+            aria-busy={isSubmitting}
+            className="w-full sm:w-auto px-4 py-2 bg-brand hover:bg-brand-dark text-white font-semibold rounded-md shadow-sm disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+          >
+            {isSubmitting && <SpinnerIcon className="h-4 w-4" />}
+            {isSubmitting ? 'Saving…' : 'Save Student'}
+          </button>
         </footer>
 
         {/* Delete Confirmation Modal */}

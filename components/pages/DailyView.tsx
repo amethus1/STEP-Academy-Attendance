@@ -258,7 +258,8 @@ export const DailyView: React.FC = () => {
 
       <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow-sm flex items-center gap-4 flex-wrap">
         <input
-          type="text"
+          type="search"
+          aria-label="Search students by name or ID"
           placeholder="Search by name or ID..."
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}

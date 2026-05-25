@@ -16,21 +16,23 @@ import { AuditLogPage } from './components/pages/AuditLogPage';
 import { RedirectToDefault } from './components/common/RedirectToDefault';
 import { useSettings } from './hooks/useSettings';
 import { runAutoBackupIfNeeded } from './services/backupService';
-import { CalendarDaysIcon, ListBulletIcon, UserGroupIcon, Cog6ToothIcon, SunIcon, ArchiveBoxArrowDownIcon, QuestionMarkCircleIcon, ChartBarIcon, StepAcademyLogo, ChevronLeftIcon, ChevronRightIcon, HomeIcon, ClockIcon } from './components/icons/Icons';
+import { CalendarDaysIcon, ListBulletIcon, UserGroupIcon, Cog6ToothIcon, SunIcon, ArchiveBoxArrowDownIcon, QuestionMarkCircleIcon, ChartBarIcon, StepAcademyLogo, ChevronLeftIcon, ChevronRightIcon, HomeIcon, ClockIcon, Bars3Icon, XMarkIcon } from './components/icons/Icons';
 
 const NavItem: React.FC<{ to: string; icon: React.ReactNode; children: React.ReactNode; isCollapsed: boolean }> = ({ to, icon, children, isCollapsed }) => {
   const baseClasses = "flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors duration-200";
   const inactiveClasses = "text-slate-600 hover:bg-sky-100 hover:text-sky-700 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white";
   const activeClasses = "bg-brand text-white shadow-md";
 
+  // On mobile (<md), the sidebar is a full-width drawer so labels always show.
+  // On desktop (>=md), `isCollapsed` hides the labels and centers the icon.
   return (
     <NavLink
       to={to}
-      className={({ isActive }) => `${baseClasses} ${isActive ? activeClasses : inactiveClasses} ${isCollapsed ? 'justify-center px-2' : ''}`}
+      className={({ isActive }) => `${baseClasses} ${isActive ? activeClasses : inactiveClasses} ${isCollapsed ? 'md:justify-center md:px-2' : ''}`}
       title={isCollapsed ? (children as string) : undefined}
     >
-      <span className={`${isCollapsed ? '' : 'mr-3'}`}>{icon}</span>
-      {!isCollapsed && children}
+      <span className={isCollapsed ? 'mr-3 md:mr-0' : 'mr-3'}>{icon}</span>
+      <span className={isCollapsed ? 'inline md:hidden' : ''}>{children}</span>
     </NavLink>
   );
 };
@@ -39,6 +41,12 @@ const App: React.FC = () => {
   const location = useLocation();
   const { settings } = useSettings();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+
+  // Close mobile nav on route change
+  useEffect(() => {
+    setIsMobileNavOpen(false);
+  }, [location.pathname]);
 
   // Theme effect
   useEffect(() => {
@@ -84,16 +92,37 @@ const App: React.FC = () => {
     <>
       <Toaster position="top-right" richColors closeButton />
       <div className="flex h-screen bg-slate-100 dark:bg-slate-800 font-sans">
-        <aside className={`${isSidebarCollapsed ? 'w-20' : 'w-64'} flex-shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 p-4 flex flex-col justify-between print-hidden transition-all duration-300 relative`}>
+        {/* Mobile backdrop */}
+        {isMobileNavOpen && (
+          <div
+            className="md:hidden fixed inset-0 bg-black bg-opacity-50 z-30 print-hidden"
+            onClick={() => setIsMobileNavOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+
+        <aside
+          className={`${isSidebarCollapsed ? 'md:w-20' : 'md:w-64'} ${isMobileNavOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:static inset-y-0 left-0 w-64 z-40 flex-shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 p-4 flex flex-col justify-between print-hidden transition-all duration-300`}
+          aria-label="Main navigation"
+        >
           <button
             onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            className="absolute -right-3 top-8 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full p-1 shadow-sm text-slate-500 hover:text-brand z-10"
+            aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            className="hidden md:block absolute -right-3 top-8 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full p-1 shadow-sm text-slate-500 hover:text-brand z-10"
           >
             {isSidebarCollapsed ? <ChevronRightIcon className="h-4 w-4" /> : <ChevronLeftIcon className="h-4 w-4" />}
           </button>
 
           <div>
-            <div className={`flex items-center justify-center mb-8 px-2 ${isSidebarCollapsed ? 'scale-75' : ''} transition-transform`}>
+            <button
+              type="button"
+              onClick={() => setIsMobileNavOpen(false)}
+              aria-label="Close navigation menu"
+              className="md:hidden absolute top-3 right-3 p-2 rounded-md text-slate-500 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              <XMarkIcon className="h-5 w-5" />
+            </button>
+            <div className={`flex items-center justify-center mb-8 px-2 ${isSidebarCollapsed ? 'md:scale-75' : ''} transition-transform`}>
               <StepAcademyLogo className="h-24 w-auto" />
             </div>
             <nav className="space-y-2">
@@ -114,7 +143,16 @@ const App: React.FC = () => {
         </aside>
 
         <main className="flex-1 flex flex-col overflow-hidden">
-          <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 p-4 print-hidden">
+          <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 p-4 print-hidden flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setIsMobileNavOpen(true)}
+              aria-label="Open navigation menu"
+              aria-expanded={isMobileNavOpen}
+              className="md:hidden -ml-1 p-2 rounded-md text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              <Bars3Icon className="h-6 w-6" />
+            </button>
             <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{getTitle()}</h2>
           </header>
           <div className="flex-1 overflow-y-auto p-6 bg-slate-50 dark:bg-slate-800">

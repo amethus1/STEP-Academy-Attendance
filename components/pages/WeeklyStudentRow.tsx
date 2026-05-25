@@ -61,7 +61,13 @@ export const WeeklyStudentRow = memo(({ student, displayDays, attendanceMap, fix
             {fixedColumns.map((col, index) => (
                 <td key={col.id} className={`py-3 px-4 whitespace-nowrap text-sm font-medium text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 ${col.isSticky ? `sticky z-10 ${index === 0 ? 'left-0' : (index === 1 ? 'left-10' : 'left-40')}` : ''} ${col.widthClass ? col.widthClass : ''} ${isSelected ? '!bg-blue-50 dark:!bg-blue-900/30' : ''}`}>
                     {col.id === 'select' ? (
-                        <input type="checkbox" checked={!!isSelected} onChange={() => onToggleSelection?.(student.id)} className="rounded border-slate-300 text-brand focus:ring-brand" />
+                        <input
+                            type="checkbox"
+                            aria-label={`Select ${student.firstName} ${student.lastName}`}
+                            checked={!!isSelected}
+                            onChange={() => onToggleSelection?.(student.id)}
+                            className="rounded border-slate-300 text-brand focus:ring-brand"
+                        />
                     ) : getCellValue(student, col.id)}
                 </td>
             ))}

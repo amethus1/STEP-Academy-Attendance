@@ -1,4 +1,5 @@
 import React, { ReactNode } from 'react';
+import { ChevronUpIcon, ChevronDownIcon } from '../icons/Icons';
 
 export type ColumnDef<T> = {
     id: string;
@@ -78,19 +79,34 @@ export function DataTable<T>({
 
     return (
         <div className="space-y-4">
-            <div className="bg-white dark:bg-slate-900 rounded-lg shadow-sm overflow-x-auto">
+            <div className="bg-white dark:bg-slate-900 rounded-lg shadow-sm overflow-x-auto max-h-[70vh]">
                 <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
-                    <thead className="bg-slate-50 dark:bg-slate-800">
+                    <thead className="bg-slate-50 dark:bg-slate-800 sticky top-0 z-10">
                         <tr>
-                            {columns.map(col => (
-                                <th
-                                    key={col.id}
-                                    onClick={() => col.sortable && handleSort(col.id)}
-                                    className={`py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap ${col.align === 'center' ? 'text-center' : col.align === 'right' ? 'text-right' : 'text-left'} ${col.sortable ? 'cursor-pointer hover:text-slate-700 dark:hover:text-slate-200' : ''} ${col.width ? col.width : ''}`}
-                                >
-                                    {col.label} {sortConfig && sortConfig.key === col.id ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
-                                </th>
-                            ))}
+                            {columns.map(col => {
+                                const isSorted = sortConfig && sortConfig.key === col.id;
+                                const ariaSort: 'ascending' | 'descending' | 'none' = isSorted
+                                    ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending')
+                                    : 'none';
+                                return (
+                                    <th
+                                        key={col.id}
+                                        scope="col"
+                                        aria-sort={col.sortable ? ariaSort : undefined}
+                                        onClick={() => col.sortable && handleSort(col.id)}
+                                        className={`py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap ${col.align === 'center' ? 'text-center' : col.align === 'right' ? 'text-right' : 'text-left'} ${col.sortable ? 'cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 select-none' : ''} ${col.width ? col.width : ''}`}
+                                    >
+                                        <span className={`inline-flex items-center gap-1 ${col.align === 'center' ? 'justify-center' : col.align === 'right' ? 'justify-end' : ''}`}>
+                                            {col.label}
+                                            {col.sortable && (
+                                                isSorted
+                                                    ? (sortConfig.direction === 'asc' ? <ChevronUpIcon className="h-3.5 w-3.5" /> : <ChevronDownIcon className="h-3.5 w-3.5" />)
+                                                    : <ChevronUpIcon className="h-3.5 w-3.5 opacity-30" />
+                                            )}
+                                        </span>
+                                    </th>
+                                );
+                            })}
                         </tr>
                     </thead>
                     <tbody className="bg-white dark:bg-slate-900 divide-y divide-slate-200 dark:divide-slate-700">
@@ -136,14 +152,14 @@ export function DataTable<T>({
                         <button
                             onClick={() => onPageChange(1)}
                             disabled={currentPage === 1}
-                            className="px-3 py-1.5 text-sm font-medium rounded-md border border-slate-300 dark:border-slate-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700 dark:text-slate-200"
+                            className="px-3 py-1.5 text-sm font-medium rounded-md border border-slate-300 dark:border-slate-600 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50 dark:disabled:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 dark:text-slate-200"
                         >
                             First
                         </button>
                         <button
                             onClick={() => onPageChange(currentPage - 1)}
                             disabled={currentPage === 1}
-                            className="px-3 py-1.5 text-sm font-medium rounded-md border border-slate-300 dark:border-slate-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700 dark:text-slate-200"
+                            className="px-3 py-1.5 text-sm font-medium rounded-md border border-slate-300 dark:border-slate-600 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50 dark:disabled:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 dark:text-slate-200"
                         >
                             Prev
                         </button>
@@ -151,14 +167,14 @@ export function DataTable<T>({
                         <button
                             onClick={() => onPageChange(currentPage + 1)}
                             disabled={currentPage === totalPages}
-                            className="px-3 py-1.5 text-sm font-medium rounded-md border border-slate-300 dark:border-slate-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700 dark:text-slate-200"
+                            className="px-3 py-1.5 text-sm font-medium rounded-md border border-slate-300 dark:border-slate-600 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50 dark:disabled:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 dark:text-slate-200"
                         >
                             Next
                         </button>
                         <button
                             onClick={() => onPageChange(totalPages)}
                             disabled={currentPage === totalPages}
-                            className="px-3 py-1.5 text-sm font-medium rounded-md border border-slate-300 dark:border-slate-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-700 dark:text-slate-200"
+                            className="px-3 py-1.5 text-sm font-medium rounded-md border border-slate-300 dark:border-slate-600 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50 dark:disabled:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 dark:text-slate-200"
                         >
                             Last
                         </button>

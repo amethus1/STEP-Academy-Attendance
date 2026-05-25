@@ -199,7 +199,8 @@ export const WeeklyView: React.FC = () => {
 
       <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow-sm flex items-center gap-4 flex-wrap">
         <input
-          type="text"
+          type="search"
+          aria-label="Search students by name or ID"
           placeholder="Search by name or ID..."
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
@@ -247,7 +248,13 @@ export const WeeklyView: React.FC = () => {
                   className={`py-3 px-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider whitespace-nowrap ${col.isSticky ? `sticky z-20 bg-slate-50 dark:bg-slate-800 ${index === 0 ? 'left-0' : 'left-10'}` : ''} ${col.widthClass ? col.widthClass : ''} ${col.id !== 'select' ? 'cursor-pointer' : ''}`}
                 >
                   {col.id === 'select' ? (
-                    <input type="checkbox" checked={studentsInYear.length > 0 && selectedStudentIds.size === studentsInYear.length} onChange={toggleAll} className="rounded border-slate-300 text-brand focus:ring-brand" />
+                    <input
+                      type="checkbox"
+                      aria-label="Select all students"
+                      checked={studentsInYear.length > 0 && selectedStudentIds.size === studentsInYear.length}
+                      onChange={toggleAll}
+                      className="rounded border-slate-300 text-brand focus:ring-brand"
+                    />
                   ) : (
                     <>
                       {col.label} {sortConfig.key === col.id ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
