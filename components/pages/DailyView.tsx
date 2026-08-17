@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useStudents } from '../../hooks/useStudents';
@@ -17,6 +17,13 @@ import { DataTable, ColumnDef } from '../common/DataTable';
 import { useStudentFilter } from '../../hooks/useStudentFilter';
 
 type AttendanceFilterType = 'All' | 'Present' | 'Absent' | 'Tardy' | 'Excused' | 'Pending';
+
+/** A keycap, for the keyboard-entry hint bar. */
+const Key: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <kbd className="px-1.5 py-0.5 rounded border border-sky-300 dark:border-sky-700 bg-white dark:bg-slate-800 font-sans font-semibold">
+    {children}
+  </kbd>
+);
 
 export const DailyView: React.FC = () => {
   const { settings } = useSettings();
@@ -154,7 +161,7 @@ export const DailyView: React.FC = () => {
    * A student with no prior record gets their new record removed; anyone else
    * is written back to the presence they had.
    */
-  const restoreAttendance = (
+  const restoreAttendance = useCallback((
     date: string,
     snapshot: { studentId: string; enrollmentId: string; presence: Presence | undefined }[]
   ) => {
@@ -172,7 +179,7 @@ export const DailyView: React.FC = () => {
       })));
     }
     toRemove.forEach(s => deleteAttendance({ studentId: s.studentId, date }));
-  };
+  }, [saveAttendance, deleteAttendance]);
 
   const markAllPresent = () => {
     if (finalFilteredStudents.length === 0) return;
@@ -217,7 +224,7 @@ export const DailyView: React.FC = () => {
     });
   };
 
-  const handleMarkAttendance = (studentId: string, currentPresence: Presence | undefined, targetPresence: Presence) => {
+  const handleMarkAttendance = useCallback((studentId: string, currentPresence: Presence | undefined, targetPresence: Presence) => {
     // enrollment_id is NOT NULL. Asserting non-null on the lookup previously let
     // an undefined slip through and the insert failed at the database instead.
     const student = studentsInYear.find(s => s.id === studentId);
@@ -252,7 +259,90 @@ export const DailyView: React.FC = () => {
     }], {
       onSuccess: () => toast.success(`${name} marked ${newPresence}`, undo)
     });
-  };
+  }, [studentsInYear, schoolYear, selectedDate, restoreAttendance, saveAttendance, deleteAttendance]);
+
+  // --- Keyboard entry ---
+  // Marking a class of 30 is otherwise 30 trips to the mouse. While active,
+  // arrows move between students and a single letter records their status.
+  const [keyboardIndex, setKeyboardIndex] = useState<number | null>(null);
+  const keyboardActive = keyboardIndex !== null;
+
+  const markableStudents = useMemo(
+    () => finalFilteredStudents.filter(s => s.status === StudentStatus.Active),
+    [finalFilteredStudents]
+  );
+
+  // Leave keyboard mode if filtering empties the list out from under it.
+  const focusedStudent = keyboardIndex === null ? undefined : markableStudents[keyboardIndex];
+
+  const exitKeyboardMode = useCallback(() => setKeyboardIndex(null), []);
+
+  useEffect(() => {
+    if (!keyboardActive) return;
+
+    const PRESENCE_KEYS: Record<string, Presence> = {
+      p: Presence.Present,
+      a: Presence.Absent,
+      t: Presence.Tardy,
+      e: Presence.Excused
+    };
+
+    const handler = (event: KeyboardEvent) => {
+      // Never steal keystrokes from a note field or any other input.
+      const target = event.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      if (target?.isContentEditable) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+      const key = event.key.toLowerCase();
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        exitKeyboardMode();
+        return;
+      }
+
+      if (event.key === 'ArrowDown' || key === 'j') {
+        event.preventDefault();
+        setKeyboardIndex(i => Math.min((i ?? 0) + 1, markableStudents.length - 1));
+        return;
+      }
+
+      if (event.key === 'ArrowUp' || key === 'k') {
+        event.preventDefault();
+        setKeyboardIndex(i => Math.max((i ?? 0) - 1, 0));
+        return;
+      }
+
+      const student = markableStudents[keyboardIndex];
+      if (!student) return;
+
+      if (PRESENCE_KEYS[key]) {
+        event.preventDefault();
+        handleMarkAttendance(student.id, attendanceByStudent[student.id], PRESENCE_KEYS[key]);
+        // Advance so a run of keystrokes walks the roster.
+        setKeyboardIndex(i => Math.min((i ?? 0) + 1, markableStudents.length - 1));
+        return;
+      }
+
+      if (event.key === 'Backspace' || event.key === 'Delete') {
+        event.preventDefault();
+        const current = attendanceByStudent[student.id];
+        if (current) handleMarkAttendance(student.id, current, current);
+      }
+    };
+
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [keyboardActive, keyboardIndex, markableStudents, attendanceByStudent, exitKeyboardMode, handleMarkAttendance]);
+
+  // Keep the focused row on screen as the selection moves.
+  useEffect(() => {
+    if (!focusedStudent) return;
+    document
+      .querySelector(`[data-row-key="${focusedStudent.id}"]`)
+      ?.scrollIntoView({ block: 'nearest' });
+  }, [focusedStudent]);
 
   // Defining Columns
   const columns: ColumnDef<ExtendedStudent>[] = [
@@ -362,10 +452,42 @@ export const DailyView: React.FC = () => {
           <button onClick={() => changeDay(1)} className="px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-50 dark:hover:bg-slate-600">Next Day</button>
           <button onClick={jumpToToday} className="ml-2 px-3 py-2 text-brand hover:underline text-sm font-medium">Jump to Today</button>
         </div>
-        <button onClick={markAllPresent} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-md shadow-sm transition-colors">
-          Mark All Present
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => (keyboardActive ? exitKeyboardMode() : setKeyboardIndex(0))}
+            aria-pressed={keyboardActive}
+            disabled={markableStudents.length === 0}
+            className={`px-4 py-2 font-semibold rounded-md shadow-sm transition-colors border disabled:opacity-50 disabled:cursor-not-allowed ${keyboardActive
+              ? 'bg-brand text-white border-brand'
+              : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600'
+              }`}
+          >
+            {keyboardActive ? 'Exit keyboard entry' : 'Keyboard entry'}
+          </button>
+          <button onClick={markAllPresent} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-md shadow-sm transition-colors">
+            Mark All Present
+          </button>
+        </div>
       </div>
+
+      {keyboardActive && (
+        <div className="flex items-center justify-between gap-3 flex-wrap p-3 rounded-lg bg-sky-50 dark:bg-sky-900/20 text-sky-900 dark:text-sky-200 text-sm border border-sky-200 dark:border-sky-800">
+          <span>
+            {focusedStudent
+              ? <>Marking <strong>{focusedStudent.firstName} {focusedStudent.lastName}</strong></>
+              : 'No student selected'}
+          </span>
+          <span className="flex items-center gap-3 flex-wrap text-xs">
+            <span><Key>P</Key> present</span>
+            <span><Key>A</Key> absent</span>
+            <span><Key>T</Key> tardy</span>
+            <span><Key>E</Key> excused</span>
+            <span><Key>↑</Key><Key>↓</Key> move</span>
+            <span><Key>Del</Key> clear</span>
+            <span><Key>Esc</Key> exit</span>
+          </span>
+        </div>
+      )}
 
       {/* Completeness: a silently unmarked day under-counts served days. */}
       <div aria-live="polite" className="space-y-3">
@@ -476,6 +598,7 @@ export const DailyView: React.FC = () => {
         sortConfig={sortConfig}
         onSort={(key) => setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc' }))}
         emptyMessage="No students match the current filter."
+        rowClassName={(s) => s.id === focusedStudent?.id ? 'bg-sky-100 dark:bg-sky-900/40 ring-2 ring-inset ring-sky-400' : ''}
       />
     </div>
   );

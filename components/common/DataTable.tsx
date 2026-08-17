@@ -30,6 +30,8 @@ interface DataTableProps<T> {
     onPageSizeChange?: (size: number) => void;
     pageSizeOptions?: number[];
     emptyMessage?: ReactNode;
+    /** Extra classes per row, e.g. to highlight a keyboard-focused row. */
+    rowClassName?: (item: T) => string;
 }
 
 export function DataTable<T>({
@@ -45,7 +47,8 @@ export function DataTable<T>({
     pageSize = 25,
     onPageSizeChange,
     pageSizeOptions = [10, 25, 50, 100],
-    emptyMessage = "No data found."
+    emptyMessage = "No data found.",
+    rowClassName
 }: DataTableProps<T>) {
 
     if (isLoading) {
@@ -111,7 +114,11 @@ export function DataTable<T>({
                     </thead>
                     <tbody className="bg-white dark:bg-slate-900 divide-y divide-slate-200 dark:divide-slate-700">
                         {data.map((item) => (
-                            <tr key={keyExtractor(item)} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                            <tr
+                                key={keyExtractor(item)}
+                                data-row-key={keyExtractor(item)}
+                                className={`hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${rowClassName ? rowClassName(item) : ''}`}
+                            >
                                 {columns.map(col => (
                                     <td key={`${keyExtractor(item)}-${col.id}`} className={`py-3 px-4 text-sm text-slate-700 dark:text-slate-300 whitespace-nowrap ${col.align === 'center' ? 'text-center' : col.align === 'right' ? 'text-right' : 'text-left'}`}>
                                         {col.render ? col.render(item) : (item as any)[col.id]}
