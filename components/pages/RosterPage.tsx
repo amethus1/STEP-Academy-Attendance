@@ -21,28 +21,22 @@ type SortDirection = 'asc' | 'desc';
 // Using UniqueStudentUI from mappers.ts for unified student view
 type ColumnDefinition = { id: SortKey; label: string; isCustom: boolean };
 
+// Rendered only while open, so its draft state is seeded once on mount instead
+// of being synced from props by an effect.
 const ColumnConfigModal: React.FC<{
-  isOpen: boolean;
   onClose: () => void;
   allColumns: ColumnDefinition[];
   visibleColumns: string[];
   columnOrder: string[];
   onConfigChange: (newVisible: string[], newOrder: string[]) => void;
-}> = ({ isOpen, onClose, allColumns, visibleColumns, columnOrder, onConfigChange }) => {
-  const [localVisible, setLocalVisible] = useState<string[]>([]);
-  const [localOrder, setLocalOrder] = useState<string[]>([]);
-
-  // Initialize local state when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      setLocalVisible([...visibleColumns]);
-      // Ensure all columns are in the order, adding any missing ones at the end
-      const currentOrder = [...columnOrder];
-      const allColIds = allColumns.map(c => c.id);
-      const missingCols = allColIds.filter(id => !currentOrder.includes(id));
-      setLocalOrder([...currentOrder, ...missingCols]);
-    }
-  }, [isOpen, visibleColumns, columnOrder, allColumns]);
+}> = ({ onClose, allColumns, visibleColumns, columnOrder, onConfigChange }) => {
+  const [localVisible, setLocalVisible] = useState<string[]>(() => [...visibleColumns]);
+  const [localOrder, setLocalOrder] = useState<string[]>(() => {
+    // Ensure all columns are in the order, adding any missing ones at the end
+    const currentOrder = [...columnOrder];
+    const missingCols = allColumns.map(c => c.id).filter(id => !currentOrder.includes(id));
+    return [...currentOrder, ...missingCols];
+  });
 
   // Sort columns by localOrder for display
   const sortedColumns = useMemo(() => {
@@ -55,8 +49,6 @@ const ColumnConfigModal: React.FC<{
       return aIndex - bIndex;
     });
   }, [allColumns, localOrder]);
-
-  if (!isOpen) return null;
 
   const handleVisibilityChange = (id: string, checked: boolean) => {
     setLocalVisible(prev => checked ? [...prev, id] : prev.filter(colId => colId !== id));
@@ -166,23 +158,13 @@ export const RosterPage: React.FC = () => {
   const schoolYearNames = useMemo(() => schoolYearsData.map(y => y.name), [schoolYearsData]);
   const allSchoolYears = useMemo(() => ['All', ...schoolYearNames], [schoolYearNames]);
   const activeSchoolYear = useActiveSchoolYear();
-  const [selectedSchoolYear, setSelectedSchoolYear] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
-  const hasInitializedYear = React.useRef(false);
 
-  // Sync selectedSchoolYear with activeSchoolYear on initial load only
-  useEffect(() => {
-    if (hasInitializedYear.current) return;
-
-    if (activeSchoolYear) {
-      setSelectedSchoolYear(activeSchoolYear);
-      hasInitializedYear.current = true;
-    } else if (schoolYearNames.length > 0) {
-      setSelectedSchoolYear(schoolYearNames[0]);
-      hasInitializedYear.current = true;
-    }
-  }, [activeSchoolYear, schoolYearNames]);
+  // Derived rather than synced by an effect: until the user picks a year
+  // explicitly, follow the active one (falling back to the first known year).
+  const [chosenSchoolYear, setChosenSchoolYear] = useState<string>('');
+  const selectedSchoolYear = chosenSchoolYear || activeSchoolYear || schoolYearNames[0] || '';
 
   // Debounce search
   useEffect(() => {
@@ -295,7 +277,7 @@ export const RosterPage: React.FC = () => {
     // So we must keep date filtering client-side.
     // Also need to support "All matches" which we get from server.
 
-    let filtered = (studentData || []).filter(s => {
+    const filtered = (studentData || []).filter(s => {
       // Search, status, campus, grade, sped are server-side now.
       // But we double check locally? No need if API is trusted. 
       // EXCEPT: The user might have typed faster than debounce? 
@@ -335,11 +317,6 @@ export const RosterPage: React.FC = () => {
 
     return filtered;
   }, [studentData, sortConfig, customFieldDefinitions, filters.entryDateFrom, filters.entryDateTo]);
-
-  // Reset to first page when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [debouncedSearchTerm, filters, selectedSchoolYear]);
 
   // Pagination calculations
   const totalStudents = sortedAndFilteredStudents.length;
@@ -401,10 +378,28 @@ export const RosterPage: React.FC = () => {
     });
   };
 
+  // Anything that changes which students are listed sends the user back to page
+  // one, otherwise they can land on a page that no longer exists.
   const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFilters(prev => ({ ...prev, [name]: value }));
+    setCurrentPage(1);
   }
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+    setCurrentPage(1);
+  };
+
+  const handleSchoolYearChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setChosenSchoolYear(e.target.value);
+    setCurrentPage(1);
+  };
+
+  const handleResetFilters = () => {
+    setFilters(initialFilters);
+    setCurrentPage(1);
+  };
 
   const orderedVisibleHeaders = useMemo(() => {
     return rosterColumnOrder
@@ -485,7 +480,9 @@ export const RosterPage: React.FC = () => {
         existingStudents={studentData as any}
         customFieldDefinitions={customFieldDefinitions}
       />
-      <ColumnConfigModal isOpen={isConfigModalOpen} onClose={() => setIsConfigModalOpen(false)} allColumns={allColumns} visibleColumns={rosterVisibleColumns} columnOrder={rosterColumnOrder} onConfigChange={handleConfigChange} />
+      {isConfigModalOpen && (
+        <ColumnConfigModal onClose={() => setIsConfigModalOpen(false)} allColumns={allColumns} visibleColumns={rosterVisibleColumns} columnOrder={rosterColumnOrder} onConfigChange={handleConfigChange} />
+      )}
 
       <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow-sm flex justify-between items-center gap-4 flex-wrap">
         <div className="relative w-full md:w-1/3">
@@ -494,7 +491,7 @@ export const RosterPage: React.FC = () => {
             aria-label="Search students by name or ID"
             placeholder="Search by name or ID..."
             value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
+            onChange={handleSearchChange}
             className="w-full p-2 pr-9 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white"
           />
           {searchTerm !== debouncedSearchTerm && (
@@ -520,7 +517,7 @@ export const RosterPage: React.FC = () => {
       <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow-sm space-y-4">
         <h4 className="font-bold text-slate-700 dark:text-slate-200">Filters</h4>
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 items-end">
-          <FilterSelect label="School Year" id="schoolYear" value={selectedSchoolYear} onChange={e => setSelectedSchoolYear(e.target.value)}>
+          <FilterSelect label="School Year" id="schoolYear" value={selectedSchoolYear} onChange={handleSchoolYearChange}>
             {allSchoolYears.map(o => <option key={o} value={o}>{o === 'All' ? 'All Years' : o}</option>)}
           </FilterSelect>
           <FilterSelect label="Status" name="status" value={filters.status} onChange={handleFilterChange}>{statusOptions.map(o => <option key={o} value={o}>{o}</option>)}</FilterSelect>
@@ -535,7 +532,7 @@ export const RosterPage: React.FC = () => {
             <label htmlFor="entryDateTo" className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Entry Date To</label>
             <input type="date" name="entryDateTo" value={filters.entryDateTo} onChange={handleFilterChange} className="w-full p-2 border rounded-md text-sm bg-white dark:bg-slate-700 dark:text-white dark:border-slate-600 border-slate-300" />
           </div>
-          <button onClick={() => setFilters(initialFilters)} className="px-4 py-2 bg-slate-200 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-300 dark:hover:bg-slate-600 h-10">Reset Filters</button>
+          <button onClick={handleResetFilters} className="px-4 py-2 bg-slate-200 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-300 dark:hover:bg-slate-600 h-10">Reset Filters</button>
         </div>
       </div>
 

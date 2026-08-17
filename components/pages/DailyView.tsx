@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 import { useStudents } from '../../hooks/useStudents';
 import { useAttendance, useSaveAttendance, useDeleteAttendance, useHolidays, useSaveAttendanceComment } from '../../hooks/useAttendance';
 import { useActiveSchoolYear } from '../../hooks/useActiveSchoolYear';
@@ -131,16 +132,26 @@ export const DailyView: React.FC = () => {
     const newPresence = currentPresence === targetPresence ? null : targetPresence;
     if (newPresence === null) {
       deleteAttendance({ studentId, date: selectedDate });
-    } else {
-      saveAttendance([{
-        id: crypto.randomUUID(),
-        enrollment_id: studentsInYear.find(s => s.id === studentId)?.enrollmentId!,
-        student_id: studentId,
-        date: selectedDate,
-        presence: newPresence,
-        comment: null
-      }]);
+      return;
     }
+
+    // enrollment_id is NOT NULL. Asserting non-null on the lookup previously let
+    // an undefined slip through and the insert failed at the database instead.
+    const enrollmentId = studentsInYear.find(s => s.id === studentId)?.enrollmentId;
+    if (!enrollmentId) {
+      console.error('No enrollment found for student', studentId, 'in', schoolYear);
+      toast.error('Could not save attendance: this student has no enrollment for the selected school year.');
+      return;
+    }
+
+    saveAttendance([{
+      id: crypto.randomUUID(),
+      enrollment_id: enrollmentId,
+      student_id: studentId,
+      date: selectedDate,
+      presence: newPresence,
+      comment: null
+    }]);
   };
 
   // Defining Columns

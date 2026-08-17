@@ -94,7 +94,10 @@ export const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({ attendan
         const calendarStartDate = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
 
         const monthsData: { name: string; days: Date[]; month: number }[] = [];
-        let loopDate = new Date(calendarStartDate);
+        const loopDate = new Date(calendarStartDate);
+
+        // A month grid is at most six weeks.
+        const MAX_CALENDAR_CELLS = 42;
 
         while (loopDate <= today) {
             const currentMonth = loopDate.getMonth();
@@ -104,18 +107,16 @@ export const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({ attendan
             const firstDayOfMonth = new Date(currentYear, currentMonth, 1);
 
             const monthDays: Date[] = [];
-            let currentCalDay = getStartOfWeek(firstDayOfMonth, 'sunday');
+            const currentCalDay = getStartOfWeek(firstDayOfMonth, 'sunday');
 
-            while (true) {
+            while (monthDays.length < MAX_CALENDAR_CELLS) {
                 monthDays.push(new Date(currentCalDay));
                 currentCalDay.setDate(currentCalDay.getDate() + 1);
 
-                // Break after filling the last week of the month
+                // Stop once the grid has run past the month and landed on a Sunday.
                 if (currentCalDay.getMonth() !== currentMonth && currentCalDay.getDay() === 0) {
                     break;
                 }
-                // Safety break for very long months
-                if (monthDays.length > 42) break;
             }
 
             monthsData.push({ name: monthName, days: monthDays, month: currentMonth });

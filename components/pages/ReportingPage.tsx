@@ -167,7 +167,7 @@ export const ReportingPage: React.FC = () => {
             {activeTab === 'atRisk' && (
                 <div className="bg-white dark:bg-slate-900 p-6 rounded-lg shadow-sm space-y-4">
                     <div className="flex flex-wrap items-center gap-4 justify-between">
-                        <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">"At-Risk" Students</h3>
+                        <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">&ldquo;At-Risk&rdquo; Students</h3>
                         <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 p-2 rounded-md">
                             <span className="text-sm">Threshold:</span>
                             <input type="number" value={atRiskConfig.threshold} onChange={e => setAtRiskConfig(p => ({ ...p, threshold: parseInt(e.target.value, 10) || 1 }))} className="w-16 p-1 text-sm border rounded-md dark:bg-slate-700 dark:border-slate-600" />

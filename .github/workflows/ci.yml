@@ -36,8 +36,6 @@ jobs:
       - name: Build
         run: npm run build
 
-      # Lint still reports pre-existing findings, so it runs for visibility
-      # without blocking. Drop continue-on-error once those are cleared.
+      # Errors block; the remaining `any`/unused-var findings are warnings.
       - name: Lint
         run: npm run lint
-        continue-on-error: true

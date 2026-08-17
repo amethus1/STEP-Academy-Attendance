@@ -10,6 +10,16 @@ interface AttendanceListProps {
     variant?: 'default' | 'report';
 }
 
+const Wrapper: React.FC<{ variant: 'default' | 'report'; children: React.ReactNode }> = ({ variant, children }) => {
+    if (variant === 'report') return <div className="w-full">{children}</div>;
+    return (
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-lg shadow-sm">
+            <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">Attendance History</h3>
+            {children}
+        </div>
+    );
+};
+
 export const AttendanceList: React.FC<AttendanceListProps> = ({ attendance, printColumns = 1, variant = 'default' }) => {
     // Sort by date DESC
     const sortedattendance = [...attendance].sort((a, b) =>
@@ -57,15 +67,9 @@ export const AttendanceList: React.FC<AttendanceListProps> = ({ attendance, prin
         );
     }
 
-    const Wrapper = ({ children }: { children: React.ReactNode }) => {
-        if (variant === 'report') return <div className="w-full">{children}</div>;
-        return (
-            <div className="bg-white dark:bg-slate-900 p-6 rounded-lg shadow-sm">
-                <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">Attendance History</h3>
-                {children}
-            </div>
-        );
-    };
+    // Defined at module scope, not here: a component declared inside the render
+    // body is a new type on every render, so React unmounts and remounts the
+    // whole list each time (losing scroll position and flickering).
 
     // For dual-column print: split attendance into two halves
     const midpoint = Math.ceil(sortedattendance.length / 2);
@@ -73,7 +77,7 @@ export const AttendanceList: React.FC<AttendanceListProps> = ({ attendance, prin
     const rightColumn = sortedattendance.slice(midpoint);
 
     return (
-        <Wrapper>
+        <Wrapper variant={variant}>
             {/* Screen view / Single Column Report: single table */}
             {printColumns === 1 && (
                 <div className="overflow-x-auto">

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Routes, Route, NavLink, useLocation } from 'react-router-dom';
 import { Toaster, toast } from 'sonner';
 import { WeeklyView } from './components/pages/WeeklyView';
@@ -18,7 +18,7 @@ import { useSettings } from './hooks/useSettings';
 import { runAutoBackupIfNeeded } from './services/backupService';
 import { CalendarDaysIcon, ListBulletIcon, UserGroupIcon, Cog6ToothIcon, SunIcon, ArchiveBoxArrowDownIcon, QuestionMarkCircleIcon, ChartBarIcon, StepAcademyLogo, ChevronLeftIcon, ChevronRightIcon, HomeIcon, ClockIcon, Bars3Icon, XMarkIcon } from './components/icons/Icons';
 
-const NavItem: React.FC<{ to: string; icon: React.ReactNode; children: React.ReactNode; isCollapsed: boolean }> = ({ to, icon, children, isCollapsed }) => {
+const NavItem: React.FC<{ to: string; icon: React.ReactNode; children: React.ReactNode; isCollapsed: boolean; onNavigate?: () => void }> = ({ to, icon, children, isCollapsed, onNavigate }) => {
   const baseClasses = "flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors duration-200";
   const inactiveClasses = "text-slate-600 hover:bg-sky-100 hover:text-sky-700 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white";
   const activeClasses = "bg-brand text-white shadow-md";
@@ -28,6 +28,7 @@ const NavItem: React.FC<{ to: string; icon: React.ReactNode; children: React.Rea
   return (
     <NavLink
       to={to}
+      onClick={onNavigate}
       className={({ isActive }) => `${baseClasses} ${isActive ? activeClasses : inactiveClasses} ${isCollapsed ? 'md:justify-center md:px-2' : ''}`}
       title={isCollapsed ? (children as string) : undefined}
     >
@@ -43,10 +44,9 @@ const App: React.FC = () => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
-  // Close mobile nav on route change
-  useEffect(() => {
-    setIsMobileNavOpen(false);
-  }, [location.pathname]);
+  // The mobile drawer closes from the NavItem click handler rather than an
+  // effect on the route, so navigating does not cost an extra render pass.
+  const closeMobileNav = useCallback(() => setIsMobileNavOpen(false), []);
 
   // Theme effect
   useEffect(() => {
@@ -72,7 +72,7 @@ const App: React.FC = () => {
 
   const getTitle = () => {
     switch (location.pathname) {
-      case '/': return 'Dashboard';
+      case '/dashboard': return 'Dashboard';
       case '/attendance': return 'Weekly View';
       case '/daily': return 'Daily Attendance';
       case '/roster': return 'Student Roster';
@@ -126,19 +126,19 @@ const App: React.FC = () => {
               <StepAcademyLogo className="h-24 w-auto" />
             </div>
             <nav className="space-y-2">
-              <NavItem to="/" icon={<HomeIcon />} isCollapsed={isSidebarCollapsed}>Dashboard</NavItem>
-              <NavItem to="/attendance" icon={<CalendarDaysIcon />} isCollapsed={isSidebarCollapsed}>Weekly View</NavItem>
-              <NavItem to="/daily" icon={<SunIcon />} isCollapsed={isSidebarCollapsed}>Daily View</NavItem>
-              <NavItem to="/roster" icon={<UserGroupIcon />} isCollapsed={isSidebarCollapsed}>Student Roster</NavItem>
-              <NavItem to="/reports" icon={<ChartBarIcon />} isCollapsed={isSidebarCollapsed}>Reporting</NavItem>
-              <NavItem to="/audit" icon={<ClockIcon />} isCollapsed={isSidebarCollapsed}>Audit Log</NavItem>
-              <NavItem to="/holidays" icon={<ListBulletIcon />} isCollapsed={isSidebarCollapsed}>Holidays</NavItem>
-              <NavItem to="/data" icon={<ArchiveBoxArrowDownIcon />} isCollapsed={isSidebarCollapsed}>Data Management</NavItem>
-              <NavItem to="/settings" icon={<Cog6ToothIcon />} isCollapsed={isSidebarCollapsed}>Settings</NavItem>
+              <NavItem to="/dashboard" icon={<HomeIcon />} isCollapsed={isSidebarCollapsed} onNavigate={closeMobileNav}>Dashboard</NavItem>
+              <NavItem to="/attendance" icon={<CalendarDaysIcon />} isCollapsed={isSidebarCollapsed} onNavigate={closeMobileNav}>Weekly View</NavItem>
+              <NavItem to="/daily" icon={<SunIcon />} isCollapsed={isSidebarCollapsed} onNavigate={closeMobileNav}>Daily View</NavItem>
+              <NavItem to="/roster" icon={<UserGroupIcon />} isCollapsed={isSidebarCollapsed} onNavigate={closeMobileNav}>Student Roster</NavItem>
+              <NavItem to="/reports" icon={<ChartBarIcon />} isCollapsed={isSidebarCollapsed} onNavigate={closeMobileNav}>Reporting</NavItem>
+              <NavItem to="/audit" icon={<ClockIcon />} isCollapsed={isSidebarCollapsed} onNavigate={closeMobileNav}>Audit Log</NavItem>
+              <NavItem to="/holidays" icon={<ListBulletIcon />} isCollapsed={isSidebarCollapsed} onNavigate={closeMobileNav}>Holidays</NavItem>
+              <NavItem to="/data" icon={<ArchiveBoxArrowDownIcon />} isCollapsed={isSidebarCollapsed} onNavigate={closeMobileNav}>Data Management</NavItem>
+              <NavItem to="/settings" icon={<Cog6ToothIcon />} isCollapsed={isSidebarCollapsed} onNavigate={closeMobileNav}>Settings</NavItem>
             </nav>
           </div>
           <nav>
-            <NavItem to="/help" icon={<QuestionMarkCircleIcon />} isCollapsed={isSidebarCollapsed}>Help & About</NavItem>
+            <NavItem to="/help" icon={<QuestionMarkCircleIcon />} isCollapsed={isSidebarCollapsed} onNavigate={closeMobileNav}>Help & About</NavItem>
           </nav>
         </aside>
 
@@ -157,7 +157,8 @@ const App: React.FC = () => {
           </header>
           <div className="flex-1 overflow-y-auto p-6 bg-slate-50 dark:bg-slate-800">
             <Routes>
-              <Route path="/" element={<DashboardPage />} />
+              <Route path="/" element={<RedirectToDefault />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/attendance" element={<WeeklyView />} />
               <Route path="/daily" element={<DailyView />} />
               <Route path="/roster" element={<RosterPage />} />

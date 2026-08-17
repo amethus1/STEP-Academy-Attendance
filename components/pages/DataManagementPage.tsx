@@ -540,11 +540,11 @@ export const DataManagementPage: React.FC = () => {
           <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full p-6">
             <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4">Close Old Enrollments?</h3>
             <p className="text-slate-600 dark:text-slate-300 mb-2">
-              This will mark all "Active" enrollments from <strong>previous school years</strong> as "Completed".
+              This will mark all &ldquo;Active&rdquo; enrollments from <strong>previous school years</strong> as &ldquo;Completed&rdquo;.
             </p>
             <ul className="text-sm text-slate-500 dark:text-slate-400 mb-4 list-disc list-inside">
               <li>Only affects enrollments NOT in the current school year</li>
-              <li>Sets status to "Completed" with an exit date of June 30</li>
+              <li>Sets status to &ldquo;Completed&rdquo; with an exit date of June 30</li>
             </ul>
             <div className="flex justify-end gap-3">
               <button
@@ -573,7 +573,7 @@ export const DataManagementPage: React.FC = () => {
         <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">End of Year Actions</h2>
         <p className="text-slate-600 dark:text-slate-300 mb-4">
           Prepare for the next school year by promoting students and updating the school year dates.
-          This process creates new student records for the next year while preserving the current year's history.
+          This process creates new student records for the next year while preserving the current year&rsquo;s history.
         </p>
         <button
           onClick={() => setIsRolloverModalOpen(true)}
@@ -752,8 +752,8 @@ export const DataManagementPage: React.FC = () => {
           <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border dark:border-slate-700">
             <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-2">Close Old Enrollments</h3>
             <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">
-              Marks all "Active" enrollments from previous school years as "Completed".
-              Use this to clean up enrollments that weren't properly closed during rollover.
+              Marks all &ldquo;Active&rdquo; enrollments from previous school years as &ldquo;Completed&rdquo;.
+              Use this to clean up enrollments that weren&rsquo;t properly closed during rollover.
             </p>
             <button
               onClick={handleCloseOldEnrollments}

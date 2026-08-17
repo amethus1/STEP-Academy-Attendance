@@ -68,7 +68,7 @@ export const SettingsPage: React.FC = () => {
                     value={settings.defaultRoute}
                     onChange={e => saveSettings({ defaultRoute: e.target.value })}
                 >
-                    <option value="/">Dashboard</option>
+                    <option value="/dashboard">Dashboard</option>
                     <option value="/attendance">Weekly View</option>
                     <option value="/daily">Daily View</option>
                     <option value="/roster">Student Roster</option>
@@ -89,7 +89,7 @@ export const SettingsPage: React.FC = () => {
                 <div className="flex items-center justify-between pt-2">
                     <label htmlFor="confirmations-toggle" className="text-sm font-medium text-slate-700 dark:text-slate-300">
                         Show confirmation dialogs
-                        <p className="text-xs text-slate-500 dark:text-slate-400">e.g., "Are you sure?" prompts before importing data.</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">e.g., &ldquo;Are you sure?&rdquo; prompts before importing data.</p>
                     </label>
                     <button
                         id="confirmations-toggle"
