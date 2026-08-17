@@ -41,10 +41,13 @@ export const saveAttendance = async (records: DBAttendance[]) => {
         const query = `
             INSERT INTO attendance (id, student_id, enrollment_id, date, presence, comment) 
             VALUES ${valuePlaceholders.join(', ')}
-            ON CONFLICT(student_id, date) DO UPDATE SET 
+            ON CONFLICT(student_id, date) DO UPDATE SET
                 presence = excluded.presence,
                 enrollment_id = excluded.enrollment_id,
-                comment = excluded.comment
+                -- Callers marking presence send comment: null, which used to wipe
+                -- a note the teacher had already written. Notes are cleared
+                -- deliberately via saveAttendanceComment, never from here.
+                comment = COALESCE(excluded.comment, attendance.comment)
         `;
 
         await db.execute(query, params);
