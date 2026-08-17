@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { SchoolYear } from '../types';
 import {
     getSchoolYears,
@@ -6,6 +7,11 @@ import {
     updateSchoolYear,
     deleteSchoolYear
 } from '../db/queries';
+
+const reportWriteFailure = (what: string) => (error: unknown) => {
+    console.error(`Failed to ${what}:`, error);
+    toast.error(`Could not save ${what}. Your change was not recorded — please try again.`);
+};
 
 export const useSchoolYears = () => {
     return useQuery({
@@ -24,6 +30,7 @@ export const useCreateSchoolYear = () => {
             // Also invalidate the simple list of year strings if we keep using it separately?
             // Ideally we unify, but for strict types let's stick to this new key.
         },
+        onError: reportWriteFailure('the school year'),
     });
 };
 
@@ -35,6 +42,7 @@ export const useUpdateSchoolYear = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['schoolYears'] });
         },
+        onError: reportWriteFailure('the school year'),
     });
 };
 
@@ -45,5 +53,6 @@ export const useDeleteSchoolYear = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['schoolYears'] });
         },
+        onError: reportWriteFailure('the school year removal'),
     });
 };

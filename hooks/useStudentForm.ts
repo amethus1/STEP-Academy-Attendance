@@ -133,7 +133,7 @@ export const useStudentForm = (studentToEdit: Student | null | undefined, existi
         } catch (err) {
             if (err instanceof z.ZodError) {
                 const fieldErrors: Record<string, string> = {};
-                (err as z.ZodError).errors.forEach((e) => {
+                (err as z.ZodError).issues.forEach((e) => {
                     if (e.path[0]) fieldErrors[e.path[0] as string] = e.message;
                 });
                 setErrors(fieldErrors);

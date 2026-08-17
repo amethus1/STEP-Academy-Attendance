@@ -1,5 +1,3 @@
-import Database from '@tauri-apps/plugin-sql';
-
 export interface Migration {
     version: number;
     name: string;
@@ -155,9 +153,10 @@ const MIGRATIONS: Migration[] = [
         version: 7,
         name: 'Enable Foreign Key Constraints with Cascading Deletes',
         sql: `
-        -- Disable FK enforcement during the rebuild so DROP TABLE does not
-        -- cascade or fail. db/index.ts re-enables it on the next connection.
-        PRAGMA foreign_keys = OFF;
+        -- Foreign-key enforcement is disabled by runMigrations for the duration
+        -- of the migration run, which is required for this rebuild pattern
+        -- (create new -> copy -> drop old -> rename) and cannot be done here:
+        -- PRAGMA foreign_keys is a no-op inside the migration's transaction.
 
         -- Recreate enrollments table with ON DELETE CASCADE
         CREATE TABLE enrollments_new (
@@ -205,14 +204,35 @@ const MIGRATIONS: Migration[] = [
         CREATE INDEX idx_attendance_enrollment_id ON attendance(enrollment_id);
         CREATE INDEX idx_attendance_student_id ON attendance(student_id);
         CREATE INDEX idx_attendance_date ON attendance(date);
-
-        -- Re-enable FK enforcement for the rest of the current session.
-        PRAGMA foreign_keys = ON;
         `
     }
 ];
 
-export const runMigrations = async (db: Database) => {
+/**
+ * Minimal database surface the migration runner needs. The Tauri SQL plugin's
+ * `Database` satisfies this structurally; tests supply an equivalent adapter so
+ * they can exercise this exact runner against a real SQLite instance.
+ */
+export interface MigrationDb {
+    execute(query: string, bindValues?: unknown[]): Promise<unknown>;
+    select<T>(query: string, bindValues?: unknown[]): Promise<T>;
+}
+
+/**
+ * Split a migration's SQL into individual statements.
+ *
+ * `PRAGMA foreign_keys` is stripped deliberately: the pragma is a silent no-op
+ * inside a transaction, and the runner owns foreign-key state for the whole
+ * migration run (see runMigrations).
+ */
+export const splitStatements = (sql: string): string[] =>
+    sql
+        .split(';')
+        .map(s => s.trim())
+        .filter(s => s.length > 0)
+        .filter(s => !/^PRAGMA\s+foreign_keys/i.test(s));
+
+export const runMigrations = async (db: MigrationDb) => {
     // 1. Create migrations table
     await db.execute(`
         CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -228,30 +248,56 @@ export const runMigrations = async (db: Database) => {
 
     console.log(`Current DB Version: ${currentVersion}`);
 
-    // 3. Apply pending migrations
-    for (const migration of MIGRATIONS) {
-        if (migration.version > currentVersion) {
+    const pending = MIGRATIONS.filter(m => m.version > currentVersion);
+    if (pending.length === 0) return;
+
+    // Foreign keys must be disabled OUTSIDE a transaction for the table-rebuild
+    // pattern (create new -> copy -> drop old -> rename) that migrations use to
+    // change constraints. SQLite ignores this pragma inside a transaction.
+    await db.execute("PRAGMA foreign_keys = OFF");
+
+    try {
+        // 3. Apply pending migrations, each atomically.
+        //
+        // Every migration runs inside its own transaction together with the
+        // schema_migrations bookkeeping row, so a crash or error mid-migration
+        // rolls back completely. Without this, an interrupted multi-statement
+        // migration leaves half-built tables behind and every subsequent launch
+        // fails on "table X already exists" — an unrecoverable state for the user.
+        for (const migration of pending) {
             console.log(`Applying migration ${migration.version}: ${migration.name}`);
+
+            await db.execute("BEGIN");
             try {
-                // Split statements if needed, or execute as one block if plugin supports it.
-                // Tauri SQL plugin execute returns Promise<QueryResult>.
-                // For safety, split by semi-colon if the plugin doesn't support multi-statement (it usually does but standard sqlite3 sometimes picky).
-                // Let's assume multi-statement works for CREATEs.
-                // BUT, to be safer, we can split.
-                const statements = migration.sql.split(';').map(s => s.trim()).filter(s => s.length > 0);
-                for (const stmt of statements) {
+                for (const stmt of splitStatements(migration.sql)) {
                     await db.execute(stmt);
                 }
 
-                // Record migration
+                // Reject the migration if it left dangling references behind.
+                const violations = await db.select<unknown[]>("PRAGMA foreign_key_check");
+                if (Array.isArray(violations) && violations.length > 0) {
+                    throw new Error(
+                        `Migration ${migration.version} produced ${violations.length} foreign key violation(s)`
+                    );
+                }
+
                 await db.execute(
                     "INSERT INTO schema_migrations (version, name, applied_at) VALUES ($1, $2, $3)",
                     [migration.version, migration.name, new Date().toISOString()]
                 );
+                await db.execute("COMMIT");
             } catch (e) {
+                try {
+                    await db.execute("ROLLBACK");
+                } catch (rollbackErr) {
+                    console.error("Migration rollback failed:", rollbackErr);
+                }
                 console.error(`Migration ${migration.version} failed:`, e);
                 throw e; // Stop migration process
             }
         }
+    } finally {
+        // Restore enforcement regardless of outcome.
+        await db.execute("PRAGMA foreign_keys = ON");
     }
 };

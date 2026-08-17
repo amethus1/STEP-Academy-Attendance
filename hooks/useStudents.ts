@@ -95,6 +95,10 @@ export const useUpdateStudent = () => {
             queryClient.invalidateQueries({ queryKey: ['student', student.id] });
             queryClient.invalidateQueries({ queryKey: ['students'] });
             queryClient.invalidateQueries({ queryKey: ['uniqueStudents'] }); // Invalidate unified view
+        },
+        onError: (error) => {
+            console.error("Failed to update student:", error);
+            toast.error("Could not save the student. Your change was not recorded — please try again.");
         }
     });
 };

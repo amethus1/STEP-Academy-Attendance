@@ -180,7 +180,10 @@ export const RolloverModal: React.FC<RolloverModalProps> = ({ isOpen, onClose })
                     grade_level: state.nextGrade,
                     campus: originalStudent.campus || '',
                     status: 'Active',
-                    sped_504: originalStudent.sped504 || null,
+                    // `originalStudent` spreads the snake_case DB row, so the
+                    // camelCase `sped504` reads undefined and silently drops the
+                    // student's SPED/504 status on every rollover.
+                    sped_504: originalStudent.sped_504 || null,
                     drg_offense: null,
                     days_assigned: 45,
                     credit_days: 0,
@@ -192,7 +195,9 @@ export const RolloverModal: React.FC<RolloverModalProps> = ({ isOpen, onClose })
                     student_number: originalStudent.studentNumber || null,
                     first_name: originalStudent.firstName,
                     last_name: originalStudent.lastName,
-                    dob: null,
+                    // Carry the date of birth forward; hardcoding null erased it
+                    // from the student's profile on every rollover.
+                    dob: originalStudent.dob ?? null,
                     guardian_name: originalStudent.guardianName,
                     guardian_phone: originalStudent.guardianPhone,
                     emergency_contact_name: originalStudent.emergencyContactName,

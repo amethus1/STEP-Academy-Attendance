@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
     getAttendanceByDate,
     getAttendanceByDateRange,
@@ -12,6 +13,28 @@ import {
     createAuditLog,
     DBAttendance
 } from '../db/queries';
+
+/**
+ * Write an audit entry without letting a logging failure surface as a failed
+ * write. The user's data is already saved at this point; losing the audit row
+ * is not worth showing them an error that implies otherwise.
+ */
+const auditQuietly = async (...args: Parameters<typeof createAuditLog>) => {
+    try {
+        await createAuditLog(...args);
+    } catch (error) {
+        console.error('Failed to write audit log:', error);
+    }
+};
+
+/**
+ * Attendance writes must never fail silently — a teacher who sees no error
+ * assumes the record saved. Report the failure and tell them what to do.
+ */
+const reportWriteFailure = (what: string) => (error: unknown) => {
+    console.error(`Failed to ${what}:`, error);
+    toast.error(`Could not save ${what}. Your change was not recorded — please try again.`);
+};
 
 export const useAttendance = (date: string) => {
     return useQuery({
@@ -39,8 +62,9 @@ export const useSaveAttendance = () => {
         onSuccess: async (_, records) => {
             // Invalidate all attendance queries to ensure Daily (single date) and Weekly (range) views both update
             queryClient.invalidateQueries({ queryKey: ['attendance'] });
-            await createAuditLog('Save Attendance', 'Attendance', 'Batch', `Saved ${records.length} records`);
-        }
+            await auditQuietly('Save Attendance', 'Attendance', 'Batch', `Saved ${records.length} records`);
+        },
+        onError: reportWriteFailure('attendance')
     });
 };
 
@@ -53,8 +77,9 @@ export const useDeleteAttendance = () => {
         },
         onSuccess: async (_, variables) => {
             queryClient.invalidateQueries({ queryKey: ['attendance'] });
-            await createAuditLog('Delete Attendance', 'Attendance', variables.studentId, `Date: ${variables.date}`);
-        }
+            await auditQuietly('Delete Attendance', 'Attendance', variables.studentId, `Date: ${variables.date}`);
+        },
+        onError: reportWriteFailure('the attendance change')
     });
 };
 
@@ -75,7 +100,8 @@ export const useAddHoliday = () => {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['holidays'] });
-        }
+        },
+        onError: reportWriteFailure('the holiday')
     });
 };
 
@@ -88,7 +114,8 @@ export const useDeleteHoliday = () => {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['holidays'] });
-        }
+        },
+        onError: reportWriteFailure('the holiday removal')
     });
 };
 
@@ -101,8 +128,9 @@ export const useSaveAttendanceComment = () => {
         },
         onSuccess: async (_, variables) => {
             queryClient.invalidateQueries({ queryKey: ['attendance'] });
-            await createAuditLog('Save Comment', 'Attendance', variables.studentId, `Date: ${variables.date}, Comment length: ${variables.comment?.length || 0}`);
-        }
+            await auditQuietly('Save Comment', 'Attendance', variables.studentId, `Date: ${variables.date}, Comment length: ${variables.comment?.length || 0}`);
+        },
+        onError: reportWriteFailure('the note')
     });
 };
 

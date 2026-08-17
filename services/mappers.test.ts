@@ -75,6 +75,8 @@ describe('mappers', () => {
 
     describe('mapDBStudentToUI', () => {
         const mockStudent: StudentWithEnrollment = {
+            id: 'student-123',
+            student_id: 'student-123',
             studentId: 'student-123',
             enrollmentId: 'enrollment-456',
             student_number: 'S001',
@@ -189,6 +191,7 @@ describe('mappers', () => {
         const mockUniqueStudent: UniqueStudentRow = {
             studentId: 'student-789',
             student_number: 'S002',
+            dob: null,
             first_name: 'Jane',
             last_name: 'Smith',
             photo_url: null,
