@@ -10,7 +10,7 @@ import { useHolidays, useStudentAttendanceWithComments } from '../../hooks/useAt
 import { Student, StudentStatus, CustomFieldDefinition } from '../../types';
 import { toISODateString, formatDateForDisplay, getSchoolYearFromDate } from '../../services/dateUtils';
 import { calculateDaysRemaining, calculateProjectedReleaseDate } from '../../services/studentLogic';
-import { mapDBHolidaysToHolidays, mapEnrollmentToUI, EnrollmentUI } from '../../services/mappers';
+import { mapDBHolidaysToHolidays, mapEnrollmentToUI, EnrollmentUI, mapUIStudentToDB } from '../../services/mappers';
 import { StudentFormModal } from '../common/StudentFormModal';
 import { AttendanceCalendar } from '../common/AttendanceCalendar';
 import { PrintOptionsModal, PrintOptions } from '../common/PrintOptionsModal';
@@ -172,8 +172,11 @@ export const StudentDetailPage: React.FC = () => {
 
       // Profile specific
       photoUrl: profile.photo_url,
+      dob: profile.dob || '',
+      gender: profile.gender || '',
       guardianName: profile.guardian_name || '',
       guardianPhone: profile.guardian_phone || '',
+      guardianEmail: profile.guardian_email || '',
       emergencyContactName: profile.emergency_contact_name || '',
       emergencyContactPhone: profile.emergency_contact_phone || '',
       customFields: parsedCustomFields,
@@ -283,19 +286,7 @@ export const StudentDetailPage: React.FC = () => {
 
   const handleUpdateStudent = (updatedStudent: Student) => {
     // 1. Update Profile
-    const profileUpdates: DBStudent = {
-      id: updatedStudent.id,
-      student_number: updatedStudent.studentNumber || null,
-      first_name: updatedStudent.firstName,
-      last_name: updatedStudent.lastName,
-      dob: null,
-      guardian_name: updatedStudent.guardianName,
-      guardian_phone: updatedStudent.guardianPhone,
-      emergency_contact_name: updatedStudent.emergencyContactName,
-      emergency_contact_phone: updatedStudent.emergencyContactPhone,
-      photo_url: updatedStudent.photoUrl,
-      custom_fields: JSON.stringify(updatedStudent.customFields)
-    };
+    const profileUpdates: DBStudent = mapUIStudentToDB(updatedStudent);
     updateProfile(profileUpdates);
 
     // 2. Update Enrollment
@@ -585,19 +576,7 @@ export const StudentDetailPage: React.FC = () => {
                     try {
                       const schoolYear = getSchoolYearFromDate(new Date(reenrollEntryDate), schoolYears);
 
-                      const profile: DBStudent = {
-                        id: uiStudent.id,
-                        student_number: uiStudent.studentNumber || null,
-                        first_name: uiStudent.firstName,
-                        last_name: uiStudent.lastName,
-                        dob: null,
-                        guardian_name: uiStudent.guardianName,
-                        guardian_phone: uiStudent.guardianPhone,
-                        emergency_contact_name: uiStudent.emergencyContactName,
-                        emergency_contact_phone: uiStudent.emergencyContactPhone,
-                        photo_url: uiStudent.photoUrl,
-                        custom_fields: JSON.stringify(uiStudent.customFields)
-                      };
+                      const profile: DBStudent = mapUIStudentToDB(uiStudent);
 
                       const enrollment: DBEnrollment = {
                         id: crypto.randomUUID(),

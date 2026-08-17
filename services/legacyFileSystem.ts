@@ -38,8 +38,11 @@ export const generateMockData = (): AppData => {
       comments: `Sample student.`,
       customFields: {},
       photoUrl: null,
+      dob: '',
+      gender: '',
       guardianName: `${firstName}'s Guardian`,
       guardianPhone: '555-123-4567',
+      guardianEmail: '',
       emergencyContactName: `Emergency Contact`,
       emergencyContactPhone: '555-987-6543'
     });

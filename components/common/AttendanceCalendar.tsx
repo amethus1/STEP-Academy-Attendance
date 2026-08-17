@@ -79,7 +79,11 @@ const CalendarDay: React.FC<{
 export const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({ attendanceRecords, holidays, entryDateStr, registrationDateStr }) => {
 
     const calendarData = useMemo(() => {
-        const attendanceMap = new Map(attendanceRecords.map(r => [r.date, r.presence]));
+        // Records arrive with `presence` as a plain string (DB rows and UI
+        // records share this shape); the stored values are Presence members.
+        const attendanceMap = new Map<string, Presence>(
+            attendanceRecords.map(r => [r.date, r.presence as Presence])
+        );
         const holidaySet = new Set(holidays.map(h => h.date));
 
         const today = new Date();

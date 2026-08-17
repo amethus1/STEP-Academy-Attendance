@@ -7,6 +7,7 @@ import { useSettings } from '../../hooks/useSettings';
 import { StudentStatus, Presence, Student } from '../../types';
 import { toISODateString } from '../../services/dateUtils';
 import { groupAttendanceByDate, groupAttendanceByStudent } from '../../services/attendanceUtils';
+import { mapUIStudentToDB } from '../../services/mappers';
 import { useActiveSchoolYear } from '../../hooks/useActiveSchoolYear';
 import { StatCard } from '../common/StatCard';
 import { AttendanceTrendChart } from '../common/AttendanceTrendChart';
@@ -62,8 +63,11 @@ export const DashboardPage: React.FC = () => {
             drgOffense: s.drg_offense || '',
             comments: s.comments || '',
             photoUrl: s.photo_url,
+            dob: s.dob || '',
+            gender: s.gender || '',
             guardianName: s.guardian_name || '',
             guardianPhone: s.guardian_phone || '',
+            guardianEmail: s.guardian_email || '',
             emergencyContactName: s.emergency_contact_name || '',
             emergencyContactPhone: s.emergency_contact_phone || '',
             customFields: (() => {
@@ -78,19 +82,7 @@ export const DashboardPage: React.FC = () => {
     }, [rawStudents]);
 
     const handleSaveStudent = (student: Student) => {
-        const profile: DBStudent = {
-            id: student.id,
-            student_number: student.studentNumber || null,
-            first_name: student.firstName,
-            last_name: student.lastName,
-            dob: null,
-            guardian_name: student.guardianName,
-            guardian_phone: student.guardianPhone,
-            emergency_contact_name: student.emergencyContactName,
-            emergency_contact_phone: student.emergencyContactPhone,
-            photo_url: student.photoUrl,
-            custom_fields: JSON.stringify(student.customFields)
-        };
+        const profile: DBStudent = mapUIStudentToDB(student);
         const enrollment: DBEnrollment = {
             id: crypto.randomUUID(),
             student_id: student.id,

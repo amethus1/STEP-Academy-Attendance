@@ -162,9 +162,12 @@ export const performRestore = async (filePath: string): Promise<{ success: boole
                     student_number: s.id ?? null,
                     first_name: s.firstName,
                     last_name: s.lastName,
-                    dob: null,
+                    // Legacy files predate these fields; carry them if present.
+                    dob: s.dob ?? null,
+                    gender: s.gender ?? null,
                     guardian_name: s.guardianName || null,
                     guardian_phone: s.guardianPhone || null,
+                    guardian_email: s.guardianEmail ?? null,
                     emergency_contact_name: s.emergencyContactName || null,
                     emergency_contact_phone: s.emergencyContactPhone || null,
                     photo_url: s.photoUrl || null,

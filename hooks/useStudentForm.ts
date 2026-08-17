@@ -40,8 +40,11 @@ const initialFormState: Student = {
     creditDays: 0,
     customFields: {},
     photoUrl: null,
+    dob: '',
+    gender: '',
     guardianName: '',
     guardianPhone: '',
+    guardianEmail: '',
     emergencyContactName: '',
     emergencyContactPhone: '',
 };

@@ -147,9 +147,12 @@ export const convertLegacyData = (data: LegacyImportData): ConvertedImportData =
             student_number: s.id, // Legacy ID becomes student number
             first_name: s.firstName,
             last_name: s.lastName,
+            // The legacy format has no date of birth, gender, or guardian email.
             dob: null,
+            gender: null,
             guardian_name: s.guardianName || null,
             guardian_phone: s.guardianPhone || null,
+            guardian_email: null,
             emergency_contact_name: s.emergencyContactName || null,
             emergency_contact_phone: s.emergencyContactPhone || null,
             photo_url: s.photoUrl || null,

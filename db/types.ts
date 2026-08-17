@@ -10,8 +10,10 @@ export interface DBStudent {
     first_name: string;
     last_name: string;
     dob: string | null;
+    gender: string | null;
     guardian_name: string | null;
     guardian_phone: string | null;
+    guardian_email: string | null;
     emergency_contact_name: string | null;
     emergency_contact_phone: string | null;
     photo_url: string | null;
@@ -99,9 +101,11 @@ export interface UniqueStudentRow {
     first_name: string;
     last_name: string;
     dob: string | null;
+    gender: string | null;
     photo_url: string | null;
     guardian_name: string | null;
     guardian_phone: string | null;
+    guardian_email: string | null;
     emergency_contact_name: string | null;
     emergency_contact_phone: string | null;
     custom_fields: string | null;

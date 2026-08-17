@@ -195,11 +195,13 @@ export const RolloverModal: React.FC<RolloverModalProps> = ({ isOpen, onClose })
                     student_number: originalStudent.studentNumber || null,
                     first_name: originalStudent.firstName,
                     last_name: originalStudent.lastName,
-                    // Carry the date of birth forward; hardcoding null erased it
+                    // Carry demographics forward; hardcoding null erased them
                     // from the student's profile on every rollover.
                     dob: originalStudent.dob ?? null,
+                    gender: originalStudent.gender ?? null,
                     guardian_name: originalStudent.guardianName,
                     guardian_phone: originalStudent.guardianPhone,
+                    guardian_email: originalStudent.guardian_email ?? null,
                     emergency_contact_name: originalStudent.emergencyContactName,
                     emergency_contact_phone: originalStudent.emergencyContactPhone,
                     photo_url: originalStudent.photoUrl,

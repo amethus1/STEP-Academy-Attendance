@@ -8,7 +8,7 @@ import { useSettings } from '../../hooks/useSettings';
 import { Student, StudentStatus, CustomFieldDefinition } from '../../types';
 import { DBStudent, DBEnrollment } from '../../db/queries';
 import { toISODateString, formatDateForDisplay } from '../../services/dateUtils';
-import { mapUniqueStudentToUI, UniqueStudentUI, mapDBHolidaysToHolidays } from '../../services/mappers';
+import { mapUniqueStudentToUI, UniqueStudentUI, mapDBHolidaysToHolidays, mapUIStudentToDB } from '../../services/mappers';
 import { exportToCsv } from '../../services/csvService';
 import { StudentFormModal } from '../common/StudentFormModal';
 import { StatusBadge } from '../common/StatusBadge';
@@ -136,6 +136,16 @@ const FilterSelect: React.FC<React.SelectHTMLAttributes<HTMLSelectElement> & { l
     </select>
   </div>
 );
+
+/**
+ * Column ids are resolved at runtime, so indexing a student widens the result
+ * to every field type — including customFields, which is an object and cannot
+ * be rendered. Coerce to something React can display.
+ */
+const asText = (value: UniqueStudentUI[keyof UniqueStudentUI]): string => {
+  if (value === null || value === undefined) return '';
+  return typeof value === 'object' ? '' : String(value);
+};
 
 const initialFilters = {
   status: 'All',
@@ -359,19 +369,7 @@ export const RosterPage: React.FC = () => {
     // Adapter to match createStudent signature { student, enrollment }
     // This requires splitting the Student object back into Profile + Enrollment
     // For now, let's just log or implement basic create.
-    const profile: DBStudent = {
-      id: student.id,
-      student_number: student.studentNumber || null,
-      first_name: student.firstName,
-      last_name: student.lastName,
-      dob: null, // UI doesn't have DOB yet?
-      guardian_name: student.guardianName,
-      guardian_phone: student.guardianPhone,
-      emergency_contact_name: student.emergencyContactName,
-      emergency_contact_phone: student.emergencyContactPhone,
-      photo_url: student.photoUrl,
-      custom_fields: JSON.stringify(student.customFields)
-    };
+    const profile: DBStudent = mapUIStudentToDB(student);
     const enrollment: DBEnrollment = {
       id: crypto.randomUUID(), // New enrollment ID
       student_id: student.id,
@@ -458,7 +456,7 @@ export const RosterPage: React.FC = () => {
         }
 
         if (col.id === 'status') {
-          return <StatusBadge status={student.status} />;
+          return <StatusBadge status={student.currentStatus} />;
         }
 
         if (col.id === 'studentNumber') {
@@ -467,10 +465,10 @@ export const RosterPage: React.FC = () => {
 
         if (isDateColumn) {
           const dateVal = student[col.id as keyof UniqueStudentUI];
-          return dateVal && dateVal !== 'N/A' && dateVal !== 'Completed' && dateVal !== 'Withdrawn' ? formatDateForDisplay(dateVal as string) : dateVal;
+          return dateVal && dateVal !== 'N/A' && dateVal !== 'Completed' && dateVal !== 'Withdrawn' ? formatDateForDisplay(dateVal as string) : asText(dateVal);
         }
 
-        return student[col.id as keyof UniqueStudentUI];
+        return asText(student[col.id as keyof UniqueStudentUI]);
       }
     }));
   }, [orderedVisibleHeaders, selectedSchoolYear]);

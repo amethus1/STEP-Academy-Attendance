@@ -1,4 +1,4 @@
-import { StudentWithEnrollment, DBHoliday, UniqueStudentRow, DBEnrollment } from '../db/queries';
+import { StudentWithEnrollment, DBHoliday, UniqueStudentRow, DBEnrollment, DBStudent } from '../db/queries';
 import { Student, StudentStatus, Holiday } from '../types';
 import { calculateDaysRemaining, calculateProjectedReleaseDate } from './studentLogic';
 import { toISODateString } from './dateUtils';
@@ -56,14 +56,40 @@ export const mapDBStudentToUI = (data: StudentWithEnrollment, holidays: Holiday[
         projectedReleaseDate,
         comments: data.comments || '',
         photoUrl: data.photo_url,
+        dob: data.dob || '',
+        gender: data.gender || '',
         guardianName: data.guardian_name || '',
         guardianPhone: data.guardian_phone || '',
+        guardianEmail: data.guardian_email || '',
         emergencyContactName: data.emergency_contact_name || '',
         emergencyContactPhone: data.emergency_contact_phone || '',
         customFields,
         masterId: data.studentId
     };
 };
+
+/**
+ * Converts a UI Student back into a DB profile row.
+ *
+ * This was previously inlined at every save site, and each copy hardcoded
+ * `dob: null`, so dates of birth were never persisted. Keep it in one place so
+ * a new profile field cannot be silently dropped by one caller.
+ */
+export const mapUIStudentToDB = (student: Student): DBStudent => ({
+    id: student.id,
+    student_number: student.studentNumber || null,
+    first_name: student.firstName,
+    last_name: student.lastName,
+    dob: student.dob || null,
+    gender: student.gender || null,
+    guardian_name: student.guardianName,
+    guardian_phone: student.guardianPhone,
+    guardian_email: student.guardianEmail || null,
+    emergency_contact_name: student.emergencyContactName,
+    emergency_contact_phone: student.emergencyContactPhone,
+    photo_url: student.photoUrl,
+    custom_fields: JSON.stringify(student.customFields)
+});
 
 /**
  * Converts a single DB holiday to UI Holiday format.
@@ -92,8 +118,11 @@ export interface UniqueStudentUI {
     firstName: string;
     lastName: string;
     photoUrl: string | null;
+    dob: string;
+    gender: string;
     guardianName: string;
     guardianPhone: string;
+    guardianEmail: string;
     emergencyContactName: string;
     emergencyContactPhone: string;
     customFields: Record<string, string | number>;
@@ -153,8 +182,11 @@ export const mapUniqueStudentToUI = (
         firstName: row.first_name,
         lastName: row.last_name,
         photoUrl: row.photo_url,
+        dob: row.dob || '',
+        gender: row.gender || '',
         guardianName: row.guardian_name || '',
         guardianPhone: row.guardian_phone || '',
+        guardianEmail: row.guardian_email || '',
         emergencyContactName: row.emergency_contact_name || '',
         emergencyContactPhone: row.emergency_contact_phone || '',
         customFields,

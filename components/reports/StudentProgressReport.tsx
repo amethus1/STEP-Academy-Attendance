@@ -1,5 +1,6 @@
 import React from 'react';
-import { Student, AttendanceRecord, Holiday } from '../../types';
+import { Student, Holiday } from '../../types';
+import { DBAttendance } from '../../db/types';
 import { PrintOptions } from '../common/PrintOptionsModal';
 import { formatDateForDisplay } from '../../services/dateUtils';
 import { AttendanceCalendar } from '../common/AttendanceCalendar';
@@ -7,7 +8,9 @@ import { AttendanceList } from '../student/AttendanceList';
 
 interface StudentProgressReportProps {
     student: Student;
-    attendance: AttendanceRecord[];
+    // DB-shaped records: this is what StudentDetailPage passes in and what the
+    // AttendanceList/AttendanceCalendar children consume.
+    attendance: DBAttendance[];
     holidays: Holiday[];
     stats: {
         daysAttended: number;

@@ -87,9 +87,10 @@ export const importData = async (data: {
         // Insert new data
         for (const s of data.students) {
             await db.execute(
-                `INSERT INTO students (id, student_number, first_name, last_name, dob, guardian_name, guardian_phone, emergency_contact_name, emergency_contact_phone, photo_url, custom_fields) 
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-                [s.id, s.student_number, s.first_name, s.last_name, s.dob, s.guardian_name, s.guardian_phone, s.emergency_contact_name, s.emergency_contact_phone, s.photo_url, s.custom_fields]
+                `INSERT INTO students (id, student_number, first_name, last_name, dob, gender, guardian_name, guardian_phone, guardian_email, emergency_contact_name, emergency_contact_phone, photo_url, custom_fields)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+                // Older export files predate gender/guardian_email, so default them.
+                [s.id, s.student_number, s.first_name, s.last_name, s.dob, s.gender ?? null, s.guardian_name, s.guardian_phone, s.guardian_email ?? null, s.emergency_contact_name, s.emergency_contact_phone, s.photo_url, s.custom_fields]
             );
         }
 

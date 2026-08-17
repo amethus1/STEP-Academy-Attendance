@@ -4,7 +4,7 @@ export interface Migration {
     sql: string;
 }
 
-const MIGRATIONS: Migration[] = [
+export const MIGRATIONS: Migration[] = [
     {
         version: 1,
         name: 'Initial Schema',
@@ -204,6 +204,17 @@ const MIGRATIONS: Migration[] = [
         CREATE INDEX idx_attendance_enrollment_id ON attendance(enrollment_id);
         CREATE INDEX idx_attendance_student_id ON attendance(student_id);
         CREATE INDEX idx_attendance_date ON attendance(date);
+        `
+    },
+    {
+        version: 8,
+        name: 'Add Student Demographics and Guardian Email',
+        sql: `
+        -- The printed progress report already displays Gender and guardian
+        -- Email, but no column ever backed them, so those rows always rendered
+        -- blank. Date of birth already had a column and just needed surfacing.
+        ALTER TABLE students ADD COLUMN gender TEXT;
+        ALTER TABLE students ADD COLUMN guardian_email TEXT;
         `
     }
 ];

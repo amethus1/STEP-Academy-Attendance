@@ -3,7 +3,7 @@
 // node:sqlite builtin resolves.
 import { describe, it, expect } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
-import { runMigrations, splitStatements, type MigrationDb } from './migrations';
+import { runMigrations, splitStatements, MIGRATIONS, type MigrationDb } from './migrations';
 
 /**
  * Adapter exposing node:sqlite through the same surface the Tauri SQL plugin
@@ -44,6 +44,22 @@ const counts = (db: DatabaseSync) => ({
     enrollments: (db.prepare('SELECT COUNT(*) c FROM enrollments').get() as { c: number }).c,
     attendance: (db.prepare('SELECT COUNT(*) c FROM attendance').get() as { c: number }).c,
 });
+
+/**
+ * Bring a database up to `version` only, so a later runMigrations exercises the
+ * real upgrade path an existing install would take.
+ */
+const migrateTo = (db: DatabaseSync, version: number) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+        version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)`);
+    db.exec('PRAGMA foreign_keys = OFF');
+    for (const m of MIGRATIONS.filter(m => m.version <= version)) {
+        for (const stmt of splitStatements(m.sql)) db.exec(stmt);
+        db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
+            .run(m.version, m.name, '2024-01-01T00:00:00.000Z');
+    }
+    db.exec('PRAGMA foreign_keys = ON');
+};
 
 const seedStudents = (db: DatabaseSync) => {
     db.exec(`
@@ -96,17 +112,17 @@ describe('runMigrations', () => {
         expect(db.prepare('SELECT version FROM schema_migrations ORDER BY version').all()).toEqual(applied);
     });
 
-    it('preserves existing rows through the table-rebuild migrations', async () => {
+    it('preserves existing rows when upgrading a populated v5 database', async () => {
         const db = fresh();
-        await runMigrations(adapter(db));
+        migrateTo(db, 5);
         seedStudents(db);
         const before = counts(db);
 
-        // Rewind bookkeeping so the rebuild migrations re-run over populated tables.
-        db.exec('DELETE FROM schema_migrations WHERE version >= 6');
         await runMigrations(adapter(db));
 
         expect(counts(db)).toEqual(before);
+        expect(db.prepare("SELECT first_name FROM students WHERE id='s1'").get())
+            .toEqual({ first_name: 'Ada' });
     });
 
     it('keeps every index after the rebuild migrations', async () => {
@@ -130,6 +146,37 @@ describe('runMigrations', () => {
         expect((db.prepare("SELECT COUNT(*) c FROM attendance WHERE student_id='s1'").get() as { c: number }).c).toBe(0);
         // Unrelated students are untouched.
         expect((db.prepare("SELECT COUNT(*) c FROM enrollments WHERE student_id='s2'").get() as { c: number }).c).toBe(1);
+    });
+
+    it('adds the demographic columns the printed report displays', async () => {
+        const db = fresh();
+        await runMigrations(adapter(db));
+
+        const columns = db.prepare('PRAGMA table_info(students)')
+            .all().map((r: Record<string, unknown>) => r.name as string);
+        expect(columns).toEqual(expect.arrayContaining(['dob', 'gender', 'guardian_email']));
+    });
+
+    it('keeps a pre-existing date of birth when adding the new columns', async () => {
+        const db = fresh();
+        migrateTo(db, 5);
+        db.exec(`INSERT INTO students (id, first_name, last_name, dob)
+                 VALUES ('s9','Grace','Hopper','1906-12-09')`);
+
+        await runMigrations(adapter(db));
+
+        expect(db.prepare("SELECT dob, gender, guardian_email FROM students WHERE id='s9'").get())
+            .toEqual({ dob: '1906-12-09', gender: null, guardian_email: null });
+    });
+
+    it('round-trips the demographic fields the report displays', async () => {
+        const db = fresh();
+        await runMigrations(adapter(db));
+        db.exec(`INSERT INTO students (id, first_name, last_name, dob, gender, guardian_email)
+                 VALUES ('s9','Grace','Hopper','1906-12-09','Female','g@example.edu')`);
+
+        expect(db.prepare("SELECT dob, gender, guardian_email FROM students WHERE id='s9'").get())
+            .toEqual({ dob: '1906-12-09', gender: 'Female', guardian_email: 'g@example.edu' });
     });
 
     it('enforces a unique school year name', async () => {

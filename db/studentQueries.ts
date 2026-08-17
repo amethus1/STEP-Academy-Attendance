@@ -110,8 +110,8 @@ export const searchStudents = async (options: StudentSearchOptions): Promise<Stu
 
     const query = `
         SELECT 
-          s.id as studentId, s.student_number, s.first_name, s.last_name, s.dob, 
-          s.guardian_name, s.guardian_phone, s.emergency_contact_name, s.emergency_contact_phone, s.photo_url, s.custom_fields,
+          s.id as studentId, s.student_number, s.first_name, s.last_name, s.dob, s.gender,
+          s.guardian_name, s.guardian_phone, s.guardian_email, s.emergency_contact_name, s.emergency_contact_phone, s.photo_url, s.custom_fields,
           e.id as enrollmentId, e.school_year, e.start_date, e.end_date, e.grade_level, e.campus, e.status,
           e.sped_504, e.drg_offense, e.days_assigned, e.credit_days, e.comments,
           (SELECT COUNT(*) FROM attendance a WHERE a.enrollment_id = e.id AND a.presence IN ('Present', 'Tardy')) as days_attended
@@ -164,9 +164,12 @@ export const getUniqueStudents = async (options: UniqueStudentSearchOptions): Pr
             s.student_number,
             s.first_name,
             s.last_name,
+            s.dob,
+            s.gender,
             s.photo_url,
             s.guardian_name,
             s.guardian_phone,
+            s.guardian_email,
             s.emergency_contact_name,
             s.emergency_contact_phone,
             s.custom_fields,
@@ -298,14 +301,14 @@ export const createStudent = async (student: DBStudent, enrollment: DBEnrollment
 
         if (exists.length === 0) {
             await db.execute(
-                `INSERT INTO students (id, student_number, first_name, last_name, dob, guardian_name, guardian_phone, emergency_contact_name, emergency_contact_phone, photo_url, custom_fields) 
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-                [student.id, student.student_number, student.first_name, student.last_name, student.dob, student.guardian_name, student.guardian_phone, student.emergency_contact_name, student.emergency_contact_phone, student.photo_url, student.custom_fields]
+                `INSERT INTO students (id, student_number, first_name, last_name, dob, gender, guardian_name, guardian_phone, guardian_email, emergency_contact_name, emergency_contact_phone, photo_url, custom_fields)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+                [student.id, student.student_number, student.first_name, student.last_name, student.dob, student.gender, student.guardian_name, student.guardian_phone, student.guardian_email, student.emergency_contact_name, student.emergency_contact_phone, student.photo_url, student.custom_fields]
             );
         } else {
             await db.execute(
-                `UPDATE students SET student_number=$2, first_name=$3, last_name=$4, guardian_name=$5, guardian_phone=$6, emergency_contact_name=$7, emergency_contact_phone=$8, photo_url=$9, custom_fields=$10 WHERE id=$1`,
-                [student.id, student.student_number, student.first_name, student.last_name, student.guardian_name, student.guardian_phone, student.emergency_contact_name, student.emergency_contact_phone, student.photo_url, student.custom_fields]
+                `UPDATE students SET student_number=$2, first_name=$3, last_name=$4, dob=$5, gender=$6, guardian_name=$7, guardian_phone=$8, guardian_email=$9, emergency_contact_name=$10, emergency_contact_phone=$11, photo_url=$12, custom_fields=$13 WHERE id=$1`,
+                [student.id, student.student_number, student.first_name, student.last_name, student.dob, student.gender, student.guardian_name, student.guardian_phone, student.guardian_email, student.emergency_contact_name, student.emergency_contact_phone, student.photo_url, student.custom_fields]
             );
         }
 
@@ -324,8 +327,8 @@ export const createStudent = async (student: DBStudent, enrollment: DBEnrollment
 export const updateStudent = async (student: DBStudent): Promise<void> => {
     const db = await getDb();
     await db.execute(
-        `UPDATE students SET student_number=$2, first_name=$3, last_name=$4, guardian_name=$5, guardian_phone=$6, emergency_contact_name=$7, emergency_contact_phone=$8, photo_url=$9, custom_fields=$10 WHERE id=$1`,
-        [student.id, student.student_number, student.first_name, student.last_name, student.guardian_name, student.guardian_phone, student.emergency_contact_name, student.emergency_contact_phone, student.photo_url, student.custom_fields]
+        `UPDATE students SET student_number=$2, first_name=$3, last_name=$4, dob=$5, gender=$6, guardian_name=$7, guardian_phone=$8, guardian_email=$9, emergency_contact_name=$10, emergency_contact_phone=$11, photo_url=$12, custom_fields=$13 WHERE id=$1`,
+        [student.id, student.student_number, student.first_name, student.last_name, student.dob, student.gender, student.guardian_name, student.guardian_phone, student.guardian_email, student.emergency_contact_name, student.emergency_contact_phone, student.photo_url, student.custom_fields]
     );
     await createAuditLog('UPDATE_STUDENT', 'Student', student.id, `Updated profile for ${student.first_name} ${student.last_name}`);
 };

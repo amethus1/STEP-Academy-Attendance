@@ -27,8 +27,11 @@ export interface Student {
   customFields: Record<string, string | number>;
   // New fields for enhanced profile
   photoUrl: string | null;
+  dob: string; // ISO string YYYY-MM-DD, '' when unknown
+  gender: string; // '' when unspecified
   guardianName: string;
   guardianPhone: string;
+  guardianEmail: string;
   emergencyContactName: string;
   emergencyContactPhone: string;
   masterId?: string; // Links multiple enrollment records for the same student

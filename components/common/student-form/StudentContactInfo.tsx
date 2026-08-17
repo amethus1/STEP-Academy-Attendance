@@ -18,6 +18,10 @@ export const StudentContactInfo: React.FC<StudentContactInfoProps> = ({ formData
                 <label htmlFor="guardianPhone" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Guardian Phone</label>
                 <input type="tel" name="guardianPhone" value={formData.guardianPhone} onChange={onChange} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white" />
             </div>
+            <div className="md:col-span-2">
+                <label htmlFor="guardianEmail" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Guardian Email</label>
+                <input type="email" id="guardianEmail" name="guardianEmail" value={formData.guardianEmail} onChange={onChange} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white" />
+            </div>
             <div>
                 <label htmlFor="emergencyContactName" className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Emergency Contact</label>
                 <input type="text" name="emergencyContactName" value={formData.emergencyContactName} onChange={onChange} className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white" />
