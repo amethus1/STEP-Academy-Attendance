@@ -212,6 +212,41 @@ export const mapUniqueStudentToUI = (
 };
 
 /**
+ * A roster row as a Student, for code that works with Students (such as the
+ * returning-student check in the student form). The roster names its latest
+ * enrollment fields currentCampus / currentGrade / currentStatus; passing rows
+ * through unconverted made re-enrolling from the roster blank out campus and
+ * grade.
+ */
+export const uniqueStudentToStudent = (u: UniqueStudentUI): Student => ({
+    id: u.id,
+    studentNumber: u.studentNumber,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    registrationDate: u.entryDate,
+    entryDate: u.entryDate,
+    exitDate: u.exitDate,
+    campus: u.currentCampus,
+    gradeLevel: u.currentGrade,
+    status: u.currentStatus,
+    sped504: u.sped504,
+    drgOffense: u.drgOffense,
+    creditDays: u.creditDays,
+    daysAssigned: u.daysAssigned,
+    comments: u.comments,
+    customFields: u.customFields,
+    photoUrl: u.photoUrl,
+    dob: u.dob,
+    gender: u.gender,
+    guardianName: u.guardianName,
+    guardianPhone: u.guardianPhone,
+    guardianEmail: u.guardianEmail,
+    emergencyContactName: u.emergencyContactName,
+    emergencyContactPhone: u.emergencyContactPhone,
+    masterId: u.id
+});
+
+/**
  * UI representation of an enrollment (for student detail history).
  */
 export interface EnrollmentUI {

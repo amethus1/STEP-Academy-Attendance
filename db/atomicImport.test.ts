@@ -89,7 +89,7 @@ describe('runAtomicImport', () => {
         await runAtomicImport(adapter(db), validPayload());
 
         expect(snapshot(db)).toEqual({ students: 2, enrollments: 2, attendance: 2, holidays: 1, school_years: 1 });
-        expect(db.prepare("SELECT id FROM students ORDER BY id").all().map((r: any) => r.id)).toEqual(['n1', 'n2']);
+        expect(db.prepare("SELECT id FROM students ORDER BY id").all().map(r => (r as { id: string }).id)).toEqual(['n1', 'n2']);
         expect(db.prepare("SELECT value FROM app_settings WHERE key='theme'").get()).toEqual({ value: '"dark"' });
         expect(stagingTables(db)).toEqual([]);
     });

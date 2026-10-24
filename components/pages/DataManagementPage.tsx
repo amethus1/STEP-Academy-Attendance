@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { RolloverModal } from './RolloverModal';
 import { CustomFieldDefinition, AutoBackupFrequency } from '../../types';
 import { TrashIcon } from '../icons/Icons';
-import { getExportData, importData, recalculateAllSchoolYears, closeOldEnrollments, describeImportFailure } from '../../db/queries';
+import { getExportData, importData, recalculateAllSchoolYears, closeOldEnrollments, describeImportFailure, type ImportPayload } from '../../db/queries';
 import { performBackup, resolveBackupFolder, AUTO_BACKUP_RETENTION } from '../../services/backupService';
 import { validateImportData, isStandardFormat, ValidationResult } from '../../services/importValidation';
 import { isLegacyFormat, convertLegacyData } from '../../services/legacyImportService';
@@ -31,7 +31,7 @@ export const DataManagementPage: React.FC = () => {
 
   // Validation state
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
-  const [pendingImportData, setPendingImportData] = useState<any>(null);
+  const [pendingImportData, setPendingImportData] = useState<ImportPayload | null>(null);
   const [showValidationModal, setShowValidationModal] = useState(false);
 
   const handleSelectBackupFolder = async () => {
@@ -198,7 +198,7 @@ export const DataManagementPage: React.FC = () => {
       const importedData = JSON.parse(text);
 
       // Helper function to attempt import with retry
-      const attemptImport = async (data: any, maxRetries = 3): Promise<void> => {
+      const attemptImport = async (data: ImportPayload, maxRetries = 3): Promise<void> => {
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
           try {
             await importData(data);
@@ -600,7 +600,7 @@ export const DataManagementPage: React.FC = () => {
                 <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Field Type</label>
                 <select
                   value={newFieldType}
-                  onChange={e => setNewFieldType(e.target.value as any)}
+                  onChange={e => setNewFieldType(e.target.value as CustomFieldDefinition['type'])}
                   className="w-full p-2 border rounded-md text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                 >
                   <option value="text">Text</option>

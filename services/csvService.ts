@@ -1,8 +1,10 @@
-const convertToCsv = (data: any[], headers: { key: string, label: string }[]): string => {
+type CsvRow = Record<string, unknown>;
+
+const convertToCsv = (data: CsvRow[], headers: { key: string, label: string }[]): string => {
     const headerRow = headers.map(h => `"${h.label}"`).join(',');
     const rows = data.map(row => {
         return headers.map(header => {
-            const value = row[header.key as keyof typeof row] ?? '';
+            const value = row[header.key] ?? '';
             const stringValue = String(value).replace(/"/g, '""');
             return `"${stringValue}"`;
         }).join(',');
@@ -10,7 +12,7 @@ const convertToCsv = (data: any[], headers: { key: string, label: string }[]): s
     return [headerRow, ...rows].join('\n');
 };
 
-export const exportToCsv = (filename: string, data: any[], headers: { key: string, label: string }[]) => {
+export const exportToCsv = (filename: string, data: CsvRow[], headers: { key: string, label: string }[]) => {
     if (!data || data.length === 0) {
         alert("No data to export.");
         return;

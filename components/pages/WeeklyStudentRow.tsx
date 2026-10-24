@@ -46,7 +46,7 @@ const getCellValue = (student: ExtendedStudent, columnId: string) => {
             return dateVal && dateVal !== 'N/A' && dateVal !== 'Completed' ? formatDateForDisplay(dateVal as string) : dateVal;
         }
         default:
-            return (student as any)[columnId];
+            return String((student as unknown as Record<string, unknown>)[columnId] ?? '');
     }
 }
 

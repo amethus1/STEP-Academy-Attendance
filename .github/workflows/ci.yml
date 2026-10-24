@@ -36,6 +36,6 @@ jobs:
       - name: Build
         run: npm run build
 
-      # Errors block; the remaining `any`/unused-var findings are warnings.
+      # Warnings fail the build too, so the codebase stays at zero.
       - name: Lint
-        run: npm run lint
+        run: npm run lint -- --max-warnings 0

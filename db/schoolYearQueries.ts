@@ -22,18 +22,23 @@ export const createSchoolYear = async (year: SchoolYear): Promise<void> => {
 
 export const updateSchoolYear = async (id: string, updates: Partial<SchoolYear>) => {
     const db = await getDb();
-    const keys = Object.keys(updates).filter(k => k !== 'id');
-    if (keys.length === 0) return;
+    const entries = Object.entries(updates).filter(([k]) => k !== 'id');
+    if (entries.length === 0) return;
 
-    // Map camelCase to snake_case for DB
+    // Map camelCase to snake_case for DB. Field names are interpolated into
+    // the SQL, so anything not listed here is refused.
     const dbMap: Record<string, string> = {
         name: 'name',
         startDate: 'start_date',
         endDate: 'end_date'
     };
+    const unknown = entries.map(([k]) => k).filter(k => !(k in dbMap));
+    if (unknown.length > 0) {
+        throw new Error(`Cannot update school year field(s): ${unknown.join(', ')}`);
+    }
 
-    const setClause = keys.map((k, i) => `${dbMap[k] || k} = $${i + 2}`).join(', ');
-    const values = keys.map(k => (updates as any)[k]);
+    const setClause = entries.map(([k], i) => `${dbMap[k]} = $${i + 2}`).join(', ');
+    const values = entries.map(([, v]) => v);
 
     await db.execute(`UPDATE school_years SET ${setClause} WHERE id = $1`, [id, ...values]);
 };

@@ -24,7 +24,7 @@ export const getExportData = async () => {
 
     // Get settings (v3+)
     const settingsRows = await db.select<{ key: string; value: string }[]>("SELECT key, value FROM app_settings");
-    const settings: Record<string, any> = {};
+    const settings: Record<string, unknown> = {};
     for (const row of settingsRows) {
         try {
             settings[row.key] = JSON.parse(row.value);

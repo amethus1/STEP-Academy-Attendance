@@ -20,7 +20,7 @@ export const searchStudents = async (options: StudentSearchOptions): Promise<Stu
     const { schoolYear, searchTerm, status, campus, gradeLevel, sped504, sortKey = 'lastName', sortDirection = 'asc', limit, offset } = options;
 
     const conditions: string[] = [];
-    const params: any[] = [];
+    const params: unknown[] = [];
     let paramIndex = 1;
 
     // 1. School Year Logic
@@ -134,7 +134,7 @@ export const getUniqueStudents = async (options: UniqueStudentSearchOptions): Pr
     const { schoolYear = 'All', status, campus, gradeLevel, sped504, searchTerm, sortKey = 'lastName', sortDirection = 'asc' } = options;
 
     const conditions: string[] = [];
-    const params: any[] = [];
+    const params: unknown[] = [];
     let paramIndex = 1;
 
     let query = `
@@ -344,13 +344,24 @@ export const deleteStudent = async (studentId: string): Promise<void> => {
     await createAuditLog('DELETE_STUDENT', 'Student', studentId, 'Deleted student and related records');
 };
 
+// Field names are interpolated into the SQL, so only known columns are accepted.
+const UPDATABLE_ENROLLMENT_COLUMNS = new Set<string>([
+    'school_year', 'start_date', 'end_date', 'grade_level', 'campus', 'status',
+    'sped_504', 'drg_offense', 'days_assigned', 'credit_days', 'comments'
+]);
+
 export const updateStudentEnrollment = async (enrollmentId: string, updates: Partial<DBEnrollment>) => {
     const db = await getDb();
-    const keys = Object.keys(updates).filter(k => k !== 'id' && k !== 'student_id');
-    if (keys.length === 0) return;
+    const entries = Object.entries(updates).filter(([k]) => k !== 'id' && k !== 'student_id');
+    if (entries.length === 0) return;
 
-    const setClause = keys.map((k, i) => `${k} = $${i + 2}`).join(', ');
-    const values = keys.map(k => (updates as any)[k]);
+    const unknown = entries.map(([k]) => k).filter(k => !UPDATABLE_ENROLLMENT_COLUMNS.has(k));
+    if (unknown.length > 0) {
+        throw new Error(`Cannot update enrollment field(s): ${unknown.join(', ')}`);
+    }
+
+    const setClause = entries.map(([k], i) => `${k} = $${i + 2}`).join(', ');
+    const values = entries.map(([, v]) => v);
 
     const query = `UPDATE enrollments SET ${setClause} WHERE id = $1`;
     await db.execute(query, [enrollmentId, ...values]);

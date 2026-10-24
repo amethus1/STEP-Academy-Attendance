@@ -108,19 +108,23 @@ export const useStudentForm = (studentToEdit: Student | null | undefined, existi
     const handleReEnroll = useCallback(() => {
         if (!potentialMatch) return;
 
-        const newId = 'SS' + Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
-
         setFormData(prev => ({
             ...prev,
-            id: newId,
+            // Keep the existing student's id, so saving adds a new enrollment to
+            // their profile. A fresh random id created a second, duplicate
+            // student with the attendance history split between the two.
+            id: potentialMatch.id,
             studentNumber: potentialMatch.studentNumber || potentialMatch.id,
             campus: potentialMatch.campus,
             gradeLevel: potentialMatch.gradeLevel,
             sped504: potentialMatch.sped504,
             drgOffense: potentialMatch.drgOffense,
             photoUrl: potentialMatch.photoUrl,
+            dob: potentialMatch.dob,
+            gender: potentialMatch.gender,
             guardianName: potentialMatch.guardianName,
             guardianPhone: potentialMatch.guardianPhone,
+            guardianEmail: potentialMatch.guardianEmail,
             emergencyContactName: potentialMatch.emergencyContactName,
             emergencyContactPhone: potentialMatch.emergencyContactPhone,
             customFields: potentialMatch.customFields,

@@ -355,11 +355,11 @@ export const RolloverModal: React.FC<RolloverModalProps> = ({ isOpen, onClose })
                     {step === 1 ? (
                         <button onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-md">Cancel</button>
                     ) : (
-                        <button onClick={() => setStep(prev => (prev - 1) as any)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-md">Back</button>
+                        <button onClick={() => setStep(prev => Math.max(1, prev - 1) as 1 | 2 | 3)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-md">Back</button>
                     )}
 
                     {step < 3 ? (
-                        <button onClick={() => setStep(prev => (prev + 1) as any)} className="px-6 py-2 bg-brand text-white rounded-md hover:bg-brand-dark">Next</button>
+                        <button onClick={() => setStep(prev => Math.min(3, prev + 1) as 1 | 2 | 3)} className="px-6 py-2 bg-brand text-white rounded-md hover:bg-brand-dark">Next</button>
                     ) : (
                         <button onClick={handleExecuteRollover} className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 font-bold">Start Rollover</button>
                     )}

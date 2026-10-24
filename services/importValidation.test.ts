@@ -80,7 +80,7 @@ describe('importValidation', () => {
     it('should fail on invalid presence value', () => {
         const invalidData = {
             ...validData,
-            attendance: [{ ...validAttendance, presence: 'Late' as any }]
+            attendance: [{ ...validAttendance, presence: 'Late' as unknown as 'Present' }]
         };
         const result = validateImportData(invalidData);
         expect(result.valid).toBe(false);

@@ -9,7 +9,7 @@ interface ReportData {
     title: string;
     subtitle?: string;
     columns: { header: string; dataKey: string }[];
-    data: any[];
+    data: Record<string, unknown>[];
     summary?: { label: string; value: string | number }[];
 }
 

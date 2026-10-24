@@ -456,7 +456,7 @@ export const DailyView: React.FC = () => {
         />
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium">Status:</label>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white">
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as StudentStatus | 'All')} className="p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white">
             <option value="All">All</option>
             <option value={StudentStatus.Active}>Active</option>
             <option value={StudentStatus.Completed}>Completed</option>
@@ -465,7 +465,7 @@ export const DailyView: React.FC = () => {
         </div>
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium">Attendance:</label>
-          <select value={attendanceFilter} onChange={e => setAttendanceFilter(e.target.value as any)} className="p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white">
+          <select value={attendanceFilter} onChange={e => setAttendanceFilter(e.target.value as AttendanceFilterType)} className="p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 dark:text-white">
             <option value="All">All</option>
             <option value="Present">Present</option>
             <option value="Absent">Absent</option>

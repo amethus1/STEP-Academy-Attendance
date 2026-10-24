@@ -31,7 +31,7 @@ export const saveAttendance = async (records: DBAttendance[]) => {
 
         // Build multi-row INSERT with placeholders
         const valuePlaceholders: string[] = [];
-        const params: any[] = [];
+        const params: unknown[] = [];
 
         batch.forEach((r, idx) => {
             const offset = idx * 6;

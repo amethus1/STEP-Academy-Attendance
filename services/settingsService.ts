@@ -129,7 +129,7 @@ export const updateSettings = async (changes: Partial<AppSettings>): Promise<voi
  * Save partial settings update to SQLite.
  */
 export const saveSettingsToDB = async (settings: Partial<AppSettings>): Promise<void> => {
-  await saveAppSettingsToDB(settings as Record<string, any>);
+  await saveAppSettingsToDB(settings as Record<string, unknown>);
 };
 
 /**

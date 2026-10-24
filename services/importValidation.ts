@@ -94,7 +94,13 @@ const ImportDataSchema = z.object({
  * Validates import data structure and referential integrity using Zod.
  * Returns detailed validation results with errors and warnings.
  */
-export const validateImportData = (data: any): ValidationResult => {
+/** The fields the reference checks read; the file is otherwise untrusted. */
+interface RowIds { id?: string; student_id?: string; enrollment_id?: string }
+type ImportFileShape = Partial<Record<'students' | 'enrollments' | 'attendance' | 'holidays' | 'schoolYears', unknown>>;
+const rowsOf = (value: unknown): RowIds[] => (Array.isArray(value) ? value : []) as RowIds[];
+
+export const validateImportData = (data: unknown): ValidationResult => {
+    const file = (data && typeof data === 'object' ? data : {}) as ImportFileShape;
     const errors: ValidationError[] = [];
     const warnings: ValidationError[] = [];
 
@@ -122,7 +128,7 @@ export const validateImportData = (data: any): ValidationResult => {
         });
 
         // Basic structural failure returns early
-        if (!data || !Array.isArray(data.students)) {
+        if (!data || !Array.isArray(file.students)) {
             return {
                 valid: false,
                 errors,
@@ -137,18 +143,18 @@ export const validateImportData = (data: any): ValidationResult => {
     // Let's rely on the inputs being arrays at least.
 
     // Safety check if arrays are missing despite schema check (or if we want to proceed partially)
-    const students = Array.isArray(data?.students) ? data.students : [];
-    const enrollments = Array.isArray(data?.enrollments) ? data.enrollments : [];
-    const attendance = Array.isArray(data?.attendance) ? data.attendance : [];
-    const holidays = Array.isArray(data?.holidays) ? data.holidays : [];
-    const schoolYears = Array.isArray(data?.schoolYears) ? data.schoolYears : [];
+    const students = rowsOf(file.students);
+    const enrollments = rowsOf(file.enrollments);
+    const attendance = rowsOf(file.attendance);
+    const holidays = rowsOf(file.holidays);
+    const schoolYears = rowsOf(file.schoolYears);
 
     // 2. Referential Integrity
     const studentIds = new Set<string>();
     const enrollmentIds = new Set<string>();
 
     // Duplicate ID checks
-    students.forEach((s: any, i: number) => {
+    students.forEach((s, i) => {
         if (s.id) {
             if (studentIds.has(s.id)) {
                 warnings.push({ field: `students.${i}.id`, message: `Duplicate student ID: ${s.id}` });
@@ -157,7 +163,7 @@ export const validateImportData = (data: any): ValidationResult => {
         }
     });
 
-    enrollments.forEach((e: any, i: number) => {
+    enrollments.forEach((e, i) => {
         if (e.id) {
             if (enrollmentIds.has(e.id)) {
                 warnings.push({ field: `enrollments.${i}.id`, message: `Duplicate enrollment ID: ${e.id}` });
@@ -174,7 +180,7 @@ export const validateImportData = (data: any): ValidationResult => {
     // Check attendance references (batch check first 500 or all?)
     // User requested stricter validation -> check all if reasonable, or optimize. 
     // Let's check all but ensure perfs. Set lookups are fast.
-    attendance.forEach((a: any, i: number) => {
+    attendance.forEach((a, i) => {
         if (a.student_id && !studentIds.has(a.student_id)) {
             errors.push({ field: `attendance.${i}.student_id`, message: `References missing student ID: ${a.student_id}` });
         }
@@ -200,12 +206,13 @@ export const validateImportData = (data: any): ValidationResult => {
 /**
  * Quick check to determine if data is in standard format (vs legacy format)
  */
-export const isStandardFormat = (data: any): boolean => {
+export const isStandardFormat = (data: unknown): boolean => {
+    const file = data as ImportFileShape | null | undefined;
     return (
-        Array.isArray(data?.students) &&
-        Array.isArray(data?.enrollments) &&
-        Array.isArray(data?.attendance) &&
-        Array.isArray(data?.holidays)
+        Array.isArray(file?.students) &&
+        Array.isArray(file?.enrollments) &&
+        Array.isArray(file?.attendance) &&
+        Array.isArray(file?.holidays)
     );
 };
 

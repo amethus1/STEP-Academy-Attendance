@@ -244,14 +244,11 @@ export const StudentDetailPage: React.FC = () => {
       // Use requestAnimationFrame to ensure DOM has painted
       requestAnimationFrame(() => {
         requestAnimationFrame(async () => {
-          try {
-            const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-            const webviewWindow = getCurrentWebviewWindow();
-            await (webviewWindow as any).print();
-          } catch (e) {
-            console.warn("Tauri print failed, trying window.print()", e);
-            window.print();
-          }
+          // Tauri routes window.print to its native print command on macOS
+          // (allowed by core:webview:allow-print); other platforms support it
+          // directly. The WebviewWindow.print() this used to call does not
+          // exist, so it always threw and fell back to this anyway.
+          window.print();
 
           // Don't reset options automatically to avoid race condition with print dialog
           // setPrintOptions(null);
@@ -350,7 +347,7 @@ export const StudentDetailPage: React.FC = () => {
 
   const customFields = customFieldDefinitions
     .map(def => ({ ...def, value: uiStudent.customFields ? uiStudent.customFields[def.id] : undefined }))
-    .filter(field => field.value !== undefined && field.value !== '');
+    .filter((field): field is typeof field & { value: string | number } => field.value !== undefined && field.value !== '');
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 printable-content">
@@ -628,7 +625,7 @@ export const StudentDetailPage: React.FC = () => {
             creditDays
           }}
           options={printOptions}
-          customFields={customFields as any}
+          customFields={customFields}
         />
       )}
     </div>

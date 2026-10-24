@@ -6,11 +6,11 @@ import { DBAppSetting } from './types';
 // SETTINGS QUERIES
 // ═══════════════════════════════════════════════════════════════════════════
 
-export const getAppSettingsFromDB = async (): Promise<Record<string, any>> => {
+export const getAppSettingsFromDB = async (): Promise<Record<string, unknown>> => {
     const db = await getDb();
     const rows = await db.select<DBAppSetting[]>("SELECT key, value FROM app_settings");
 
-    const settings: Record<string, any> = {};
+    const settings: Record<string, unknown> = {};
     for (const row of rows) {
         try {
             settings[row.key] = JSON.parse(row.value);
@@ -21,7 +21,7 @@ export const getAppSettingsFromDB = async (): Promise<Record<string, any>> => {
     return settings;
 };
 
-export const saveAppSettingsToDB = async (settings: Record<string, any>): Promise<void> => {
+export const saveAppSettingsToDB = async (settings: Record<string, unknown>): Promise<void> => {
     const { withTransaction } = await import('./index');
     // All keys or none, so a failure cannot leave a half-applied settings change.
     await withTransaction(Object.entries(settings).map(([key, value]) => ({
@@ -30,7 +30,7 @@ export const saveAppSettingsToDB = async (settings: Record<string, any>): Promis
     })));
 };
 
-export const getAppSettingFromDB = async (key: string): Promise<any | null> => {
+export const getAppSettingFromDB = async (key: string): Promise<unknown> => {
     const db = await getDb();
     const rows = await db.select<DBAppSetting[]>("SELECT value FROM app_settings WHERE key = $1", [key]);
 

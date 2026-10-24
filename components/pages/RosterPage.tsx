@@ -9,7 +9,7 @@ import { useSettings } from '../../hooks/useSettings';
 import { Student, StudentStatus, CustomFieldDefinition } from '../../types';
 import { DBStudent, DBEnrollment } from '../../db/queries';
 import { toISODateString, formatDateForDisplay } from '../../services/dateUtils';
-import { mapUniqueStudentToUI, UniqueStudentUI, mapDBHolidaysToHolidays, mapUIStudentToDB } from '../../services/mappers';
+import { mapUniqueStudentToUI, UniqueStudentUI, mapDBHolidaysToHolidays, mapUIStudentToDB, uniqueStudentToStudent } from '../../services/mappers';
 import { exportToCsv } from '../../services/csvService';
 import { StudentFormModal } from '../common/StudentFormModal';
 import { StatusBadge } from '../common/StatusBadge';
@@ -260,6 +260,8 @@ export const RosterPage: React.FC = () => {
     });
   }, [rawStudents, holidaysUI, projectionMethod]);
 
+  const existingStudents = useMemo(() => studentData.map(uniqueStudentToStudent), [studentData]);
+
   const campuses = useMemo(
     () => ['All', ...Array.from(new Set((rawStudents || []).map(s => s.latest_campus).filter(Boolean)))],
     [rawStudents]
@@ -412,7 +414,7 @@ export const RosterPage: React.FC = () => {
   const handleExport = () => {
     const headers = orderedVisibleHeaders.map(col => ({ key: col.id, label: col.label }));
     const dataToExport = sortedAndFilteredStudents.map(student => {
-      const row: Record<string, any> = {};
+      const row: Record<string, unknown> = {};
       headers.forEach(h => {
         if (allColumns.find(c => c.id === h.key)?.isCustom) {
           row[h.key] = student.customFields[h.key] ?? '';
@@ -479,7 +481,7 @@ export const RosterPage: React.FC = () => {
         onClose={() => setIsStudentModalOpen(false)}
         onSave={handleSaveStudent}
         existingIds={(rawStudents || []).map(s => s.studentId)}
-        existingStudents={studentData as any}
+        existingStudents={existingStudents}
         customFieldDefinitions={customFieldDefinitions}
       />
       {isConfigModalOpen && (

@@ -42,13 +42,15 @@ const importSchema = z.object({
     studentNumber: z.string().min(1, "Student ID/Number is required"),
     campus: z.string().default('Main'),
     gradeLevel: z.string().default('9'),
+    // Defaults to Active when the sheet has no Status column; without the
+    // default every row of such a sheet failed validation.
     status: z.nativeEnum(StudentStatus).or(z.string().transform(val => {
         const v = val.toLowerCase();
         if (v === 'active') return StudentStatus.Active;
         if (v === 'completed') return StudentStatus.Completed;
         if (v === 'withdrawn') return StudentStatus.Withdrawn;
         return StudentStatus.Active; // Default
-    })),
+    })).default(StudentStatus.Active),
     // Optional fields
     dob: z.string().optional(),
     guardianName: z.string().optional(),
@@ -142,8 +144,9 @@ export const validateImportData = (data: ImportRow[]): ImportResult => {
         if (result.success) {
             validRows.push(result.data as ValidImportRow);
         } else {
-            const zError = result.error as any;
-            const errors: ImportError[] = zError.errors.map((e: any) => ({
+            // Zod 4 exposes problems as `issues`; the old `errors` property is
+            // gone, and reading it threw on the first invalid row.
+            const errors: ImportError[] = result.error.issues.map(e => ({
                 row: index + 2, // +2 for 1-based index and header row
                 field: e.path.join('.'),
                 message: e.message

@@ -1,8 +1,9 @@
 import { AppSettings, AutoBackupFrequency } from '../types';
 import { getExportData, describeImportFailure } from '../db/queries';
-import type { DBStudent, DBEnrollment, DBAttendance, DBHoliday } from '../db/types';
+import type { DBStudent, DBEnrollment, DBAttendance, DBHoliday, DBSchoolYear } from '../db/types';
+import type { ImportPayload } from '../db/atomicImport';
+import type { LegacyImportData, LegacyStudent, LegacyAttendance, LegacyHoliday } from './legacyImportService';
 import { queryClient } from '../lib/react-query';
-import { getDb } from '../db';
 import { getSettings, updateSettings } from './settingsService';
 
 /** Backup files this app writes start with one of these, so pruning never touches anything else. */
@@ -200,12 +201,12 @@ export const performRestore = async (filePath: string): Promise<{ success: boole
         const { readTextFile } = await import('@tauri-apps/plugin-fs');
         const { importData } = await import('../db/queries'); // Ensure this is exported from db/queries index
 
-        const db = await getDb();
-        // Give SQLite more time to wait for locks during restore
-        await db.execute("PRAGMA busy_timeout = 10000");
-
         const content = await readTextFile(filePath);
-        const data = JSON.parse(content);
+        const data: unknown = JSON.parse(content);
+        if (!data || typeof data !== 'object') {
+            throw new Error('Invalid backup file format: not a backup object');
+        }
+        const raw = data as Record<string, unknown>;
 
         const deriveSchoolYear = (isoDate?: string) => {
             if (!isoDate) return '2024-2025';
@@ -215,7 +216,7 @@ export const performRestore = async (filePath: string): Promise<{ success: boole
         };
 
         // Helper to convert legacy backups that only contain students/attendance(/holidays)
-        const convertLegacyBackup = (legacy: any) => {
+        const convertLegacyBackup = (legacy: LegacyImportData): ImportPayload => {
             const newStudents: DBStudent[] = [];
             const newEnrollments: DBEnrollment[] = [];
             const newAttendance: DBAttendance[] = [];
@@ -223,7 +224,7 @@ export const performRestore = async (filePath: string): Promise<{ success: boole
 
             const idMap = new Map<string, { studentUuid: string; enrollmentUuid: string }>();
 
-            for (const s of legacy.students as any[]) {
+            for (const s of legacy.students) {
                 const studentUuid = crypto.randomUUID();
                 const enrollmentUuid = crypto.randomUUID();
                 const schoolYear = deriveSchoolYear(s.entryDate);
@@ -264,7 +265,7 @@ export const performRestore = async (filePath: string): Promise<{ success: boole
                 });
             }
 
-            for (const a of legacy.attendance as any[]) {
+            for (const a of legacy.attendance ?? []) {
                 const map = idMap.get(a.studentId);
                 if (map) {
                     newAttendance.push({
@@ -273,20 +274,15 @@ export const performRestore = async (filePath: string): Promise<{ success: boole
                         enrollment_id: map.enrollmentUuid,
                         date: a.date,
                         presence: a.presence,
-                        comment: a.comment ?? null
+                        comment: (a as { comment?: string | null }).comment ?? null
                     });
                 }
             }
 
-            if (Array.isArray(legacy.holidays)) {
-                for (const h of legacy.holidays) {
-                    if (h?.date && h?.name) {
-                        newHolidays.push({
-                            date: h.date,
-                            name: h.name,
-                            school_year: deriveSchoolYear(h.date)
-                        });
-                    }
+            const holidays = Array.isArray(legacy.holidays) ? legacy.holidays : undefined;
+            for (const h of holidays ?? []) {
+                if (h?.date && h?.name) {
+                    newHolidays.push({ date: h.date, name: h.name, school_year: deriveSchoolYear(h.date) });
                 }
             }
 
@@ -294,39 +290,29 @@ export const performRestore = async (filePath: string): Promise<{ success: boole
                 students: newStudents,
                 enrollments: newEnrollments,
                 attendance: newAttendance,
-                holidays: newHolidays,
+                // Missing stays missing, so the import keeps the existing holidays.
+                holidays: holidays ? newHolidays : undefined,
                 settings: {
                     customFieldDefinitions: Array.isArray(legacy.customFieldDefinitions) ? legacy.customFieldDefinitions : []
                 }
             };
         };
 
-        // Normalize possible key names/cases
-        const students = Array.isArray(data.students)
-            ? data.students
-            : Array.isArray((data as any).Students)
-                ? (data as any).Students
-                : [];
-        const enrollments = Array.isArray(data.enrollments)
-            ? data.enrollments
-            : Array.isArray((data as any).Enrollments)
-                ? (data as any).Enrollments
-                : null;
-        const attendance = Array.isArray(data.attendance)
-            ? data.attendance
-            : Array.isArray((data as any).Attendance)
-                ? (data as any).Attendance
-                : [];
-        const holidays = Array.isArray(data.holidays)
-            ? data.holidays
-            : Array.isArray((data as any).Holidays)
-                ? (data as any).Holidays
-                : [];
-        const schoolYears = Array.isArray(data.schoolYears)
-            ? data.schoolYears
-            : Array.isArray((data as any).SchoolYears)
-                ? (data as any).SchoolYears
-                : [];
+        // Accept either key casing. A key that is absent stays undefined rather
+        // than becoming [], because the import treats an empty holiday or school
+        // year list as "replace with nothing".
+        const pick = (...keys: string[]): unknown[] | undefined => {
+            for (const key of keys) {
+                if (Array.isArray(raw[key])) return raw[key] as unknown[];
+            }
+            return undefined;
+        };
+
+        const students = pick('students', 'Students') ?? [];
+        const enrollments = pick('enrollments', 'Enrollments');
+        const attendance = pick('attendance', 'Attendance') ?? [];
+        const holidays = pick('holidays', 'Holidays');
+        const schoolYears = pick('schoolYears', 'SchoolYears');
 
         if (students.length === 0) {
             throw new Error("Invalid backup file format: Missing required data");
@@ -335,21 +321,22 @@ export const performRestore = async (filePath: string): Promise<{ success: boole
         // Cancel any active queries to release read locks before restore
         await queryClient.cancelQueries();
 
-        const importPayload = enrollments
+        // Shapes are checked by the import itself, which rejects a malformed
+        // file before replacing anything.
+        const importPayload: ImportPayload = enrollments
             ? {
-                ...data,
-                students,
-                enrollments,
-                attendance,
-                holidays,
-                schoolYears,
-                settings: data.settings ?? {}
+                students: students as DBStudent[],
+                enrollments: enrollments as DBEnrollment[],
+                attendance: attendance as DBAttendance[],
+                holidays: holidays as DBHoliday[] | undefined,
+                schoolYears: schoolYears as DBSchoolYear[] | undefined,
+                settings: (raw.settings as Record<string, unknown> | undefined) ?? {}
             }
             : convertLegacyBackup({
-                students,
-                attendance,
-                holidays,
-                customFieldDefinitions: data.customFieldDefinitions
+                students: students as LegacyStudent[],
+                attendance: attendance as LegacyAttendance[],
+                holidays: holidays as LegacyHoliday[] | undefined,
+                customFieldDefinitions: raw.customFieldDefinitions as LegacyImportData['customFieldDefinitions']
             });
 
         // Retry a few times if SQLite reports the DB is locked
@@ -359,7 +346,7 @@ export const performRestore = async (filePath: string): Promise<{ success: boole
                 await importData(importPayload);
                 await queryClient.invalidateQueries();
                 return { success: true };
-            } catch (e: any) {
+            } catch (e) {
                 const locked = String(e).toLowerCase().includes('database is locked');
                 if (locked && attempt < maxAttempts) {
                     await new Promise(res => setTimeout(res, 300 * attempt));

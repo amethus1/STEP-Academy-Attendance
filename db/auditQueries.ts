@@ -36,7 +36,7 @@ export const getAuditLogs = async (options: GetAuditLogsOptions = {}): Promise<{
     const { limit = 50, offset = 0, entityType, action, startDate, endDate } = options;
 
     const conditions: string[] = [];
-    const params: any[] = [];
+    const params: unknown[] = [];
     let paramIndex = 1;
 
     if (entityType) {

@@ -5,6 +5,7 @@ import {
     getCurrentSchoolYear,
     convertLegacyData
 } from './legacyImportService';
+import type { LegacyImportData } from './legacyImportService';
 
 describe('legacyImportService', () => {
     describe('isLegacyFormat', () => {
@@ -62,7 +63,7 @@ describe('legacyImportService', () => {
     });
 
     describe('convertLegacyData', () => {
-        const legacyData = {
+        const legacyData: LegacyImportData = {
             students: [
                 {
                     id: 'STU001',

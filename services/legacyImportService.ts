@@ -8,6 +8,7 @@ import {
     DBHoliday,
     DBSchoolYear
 } from '../db/types';
+import type { CustomFieldDefinition } from '../types';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -29,10 +30,14 @@ export interface LegacyStudent {
     daysAssigned?: number;
     creditDays?: number;
     comments?: string;
-    customFields?: Record<string, any>;
+    customFields?: Record<string, string | number>;
     photoUrl?: string | null;
+    // Present only in some later legacy backups; carried over when found.
+    dob?: string | null;
+    gender?: string | null;
     guardianName?: string;
     guardianPhone?: string;
+    guardianEmail?: string | null;
     emergencyContactName?: string;
     emergencyContactPhone?: string;
 }
@@ -55,7 +60,7 @@ export interface LegacyImportData {
     students: LegacyStudent[];
     attendance: LegacyAttendance[];
     holidays?: LegacyHoliday[];
-    customFieldDefinitions?: any[];
+    customFieldDefinitions?: CustomFieldDefinition[];
 }
 
 /** Converted data ready for import */
@@ -65,7 +70,7 @@ export interface ConvertedImportData {
     attendance: DBAttendance[];
     holidays: DBHoliday[];
     schoolYears: DBSchoolYear[];
-    settings?: Record<string, any>;
+    settings?: { customFieldDefinitions?: CustomFieldDefinition[] } & Record<string, unknown>;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -76,10 +81,11 @@ export interface ConvertedImportData {
  * Checks if data is in legacy format (has students but no enrollments)
  * Attendance array may or may not be present
  */
-export const isLegacyFormat = (data: any): data is LegacyImportData => {
+export const isLegacyFormat = (data: unknown): data is LegacyImportData => {
+    const candidate = data as { students?: unknown; enrollments?: unknown } | null;
     return (
-        Array.isArray(data?.students) &&
-        !Array.isArray(data?.enrollments)
+        Array.isArray(candidate?.students) &&
+        !Array.isArray(candidate?.enrollments)
     );
 };
 
@@ -187,7 +193,7 @@ export const convertLegacyData = (data: LegacyImportData): ConvertedImportData =
                     student_id: map.studentUuid,
                     enrollment_id: map.enrollmentUuid,
                     date: a.date,
-                    presence: a.presence as any,
+                    presence: a.presence,
                     comment: null
                 });
             }

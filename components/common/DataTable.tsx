@@ -108,7 +108,7 @@ export function DataTable<T>({
                             >
                                 {columns.map(col => (
                                     <td key={`${keyExtractor(item)}-${col.id}`} className={`py-3 px-4 text-sm text-slate-700 dark:text-slate-300 whitespace-nowrap ${col.align === 'center' ? 'text-center' : col.align === 'right' ? 'text-right' : 'text-left'}`}>
-                                        {col.render ? col.render(item) : (item as any)[col.id]}
+                                        {col.render ? col.render(item) : String((item as Record<string, unknown>)[col.id] ?? '')}
                                     </td>
                                 ))}
                             </tr>
