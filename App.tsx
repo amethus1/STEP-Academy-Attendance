@@ -1,18 +1,25 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { Routes, Route, NavLink, useLocation } from 'react-router-dom';
 import { Toaster, toast } from 'sonner';
 import { WeeklyView } from './components/pages/WeeklyView';
 import { DailyView } from './components/pages/DailyView';
-import { RosterPage } from './components/pages/RosterPage';
-import { StudentDetailPage } from './components/pages/StudentDetailPage';
-import { HolidaysPage } from './components/pages/HolidaysPage';
-import { SchoolYearsPage } from './components/pages/SchoolYearsPage';
-import { DataManagementPage } from './components/pages/DataManagementPage';
-import { SettingsPage } from './components/pages/SettingsPage';
-import { HelpPage } from './components/pages/HelpPage';
-import { ReportingPage } from './components/pages/ReportingPage';
-import { DashboardPage } from './components/pages/DashboardPage';
-import { AuditLogPage } from './components/pages/AuditLogPage';
+import { PageLoadingSkeleton } from './components/common/SkeletonLoader';
+
+// Weekly (the default landing page) and Daily (the daily routine) load with the
+// app. Everything else is fetched when first opened, which keeps chart.js and
+// the PDF libraries out of startup.
+const page = <K extends string>(load: () => Promise<Record<K, React.ComponentType>>, name: K) =>
+  lazy(() => load().then(m => ({ default: m[name] })));
+const RosterPage = page(() => import('./components/pages/RosterPage'), 'RosterPage');
+const StudentDetailPage = page(() => import('./components/pages/StudentDetailPage'), 'StudentDetailPage');
+const HolidaysPage = page(() => import('./components/pages/HolidaysPage'), 'HolidaysPage');
+const SchoolYearsPage = page(() => import('./components/pages/SchoolYearsPage'), 'SchoolYearsPage');
+const DataManagementPage = page(() => import('./components/pages/DataManagementPage'), 'DataManagementPage');
+const SettingsPage = page(() => import('./components/pages/SettingsPage'), 'SettingsPage');
+const HelpPage = page(() => import('./components/pages/HelpPage'), 'HelpPage');
+const ReportingPage = page(() => import('./components/pages/ReportingPage'), 'ReportingPage');
+const DashboardPage = page(() => import('./components/pages/DashboardPage'), 'DashboardPage');
+const AuditLogPage = page(() => import('./components/pages/AuditLogPage'), 'AuditLogPage');
 import { RedirectToDefault } from './components/common/RedirectToDefault';
 import { useSettings } from './hooks/useSettings';
 import { runAutoBackupIfNeeded } from './services/backupService';
@@ -162,6 +169,7 @@ const App: React.FC = () => {
             <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{getTitle()}</h2>
           </header>
           <div className="flex-1 overflow-y-auto p-6 bg-slate-50 dark:bg-slate-800">
+            <Suspense fallback={<PageLoadingSkeleton />}>
             <Routes>
               <Route path="/" element={<RedirectToDefault />} />
               <Route path="/dashboard" element={<DashboardPage />} />
@@ -177,6 +185,7 @@ const App: React.FC = () => {
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/help" element={<HelpPage />} />
             </Routes>
+            </Suspense>
           </div>
         </main>
       </div>

@@ -18,7 +18,13 @@ export const useActiveSchoolYear = (referenceDate?: Date | string) => {
     // Ensure we have a valid Date object
     const dateObj = useMemo(() => {
         if (!referenceDate) return new Date();
-        if (typeof referenceDate === 'string') return new Date(referenceDate + "T12:00:00Z"); // Append time to avoid timezone shift on plain dates
+        if (typeof referenceDate === 'string') {
+            // A plain YYYY-MM-DD gets a noon time so the time zone cannot move it
+            // to another day. A string that already has a time is used as-is:
+            // appending a second one made an invalid date and the school year
+            // "NaN-NaN", which emptied the Weekly view.
+            return new Date(/^\d{4}-\d{2}-\d{2}$/.test(referenceDate) ? referenceDate + 'T12:00:00Z' : referenceDate);
+        }
         return referenceDate;
     }, [referenceDate]);
 

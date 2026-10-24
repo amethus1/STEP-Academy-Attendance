@@ -6,7 +6,6 @@ import { useSchoolYears } from '../../hooks/useSchoolYears';
 import { useSettings } from '../../hooks/useSettings';
 import { useReportingAnalytics } from '../../hooks/useReportingAnalytics';
 import { toISODateString, getSchoolYearFromDate } from '../../services/dateUtils';
-import { generatePDF } from '../../services/pdfService';
 import { DocumentArrowDownIcon, CalendarDaysIcon, ChartBarIcon } from '../icons/Icons';
 import { AttendanceTrendChart } from '../common/AttendanceTrendChart';
 import { StatCard } from '../common/StatCard';
@@ -46,7 +45,9 @@ export const ReportingPage: React.FC = () => {
 
     const loading = studentsLoading || attendanceLoading;
 
-    const handleExportAtRisk = () => {
+    const handleExportAtRisk = async () => {
+        // Loaded on demand: the PDF libraries are large and only needed here.
+        const { generatePDF } = await import('../../services/pdfService');
         generatePDF({
             title: 'At-Risk Student Report',
             subtitle: `Students with ${atRiskConfig.threshold}+ absences in the last ${atRiskConfig.days} days`,
@@ -69,7 +70,9 @@ export const ReportingPage: React.FC = () => {
         }, `at-risk-report-${today}`);
     };
 
-    const handleExportBreakdown = () => {
+    const handleExportBreakdown = async () => {
+        // Loaded on demand: the PDF libraries are large and only needed here.
+        const { generatePDF } = await import('../../services/pdfService');
         generatePDF({
             title: 'Attendance Breakdown Report',
             subtitle: `Generated on ${today}`,

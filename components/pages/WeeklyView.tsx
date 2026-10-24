@@ -46,7 +46,7 @@ export const WeeklyView: React.FC = () => {
   const [currentDate, setCurrentDate] = useState<string>(toISODateString(new Date()));
 
   // Derive school year - prefer manual selection, else auto-detect
-  const schoolYear = useActiveSchoolYear(currentDate + "T12:00:00Z");
+  const schoolYear = useActiveSchoolYear(currentDate);
 
   const { data: rawStudents, isLoading: studentsLoading } = useStudents(schoolYear);
   const { data: holidays = [] } = useHolidays();
