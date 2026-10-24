@@ -3,6 +3,7 @@ import { useActiveSchoolYear } from '../../hooks/useActiveSchoolYear';
 import { parseCsv, validateImportData, processImport, ImportResult } from '../../services/importService';
 import { toast } from 'sonner';
 import { useLogAction } from '../../hooks/useAuditLogs';
+import { Dialog } from './Dialog';
 
 interface ImportWizardProps {
     isOpen: boolean;
@@ -72,12 +73,16 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ isOpen, onClose, onS
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <div className="bg-white dark:bg-slate-900 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <Dialog
+            label="Import Students (CSV)"
+            // Escape must not abandon an import that is writing records.
+            onClose={step === 'importing' ? undefined : onClose}
+            className="bg-white dark:bg-slate-900 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col"
+        >
                 {/* Header */}
                 <div className="p-6 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
                     <h2 className="text-xl font-bold text-slate-900 dark:text-white">Import Students (CSV)</h2>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-500">
+                    <button onClick={onClose} disabled={step === 'importing'} className="text-slate-400 hover:text-slate-500 disabled:opacity-40">
                         <span className="sr-only">Close</span>
                         <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -203,7 +208,6 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ isOpen, onClose, onS
                         <button onClick={onClose} className="px-4 py-2 bg-brand text-white rounded-md hover:bg-brand-dark font-medium">Done</button>
                     )}
                 </div>
-            </div>
-        </div>
+        </Dialog>
     );
 };

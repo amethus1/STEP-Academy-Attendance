@@ -1,3 +1,4 @@
+import { Dialog } from './Dialog';
 import React, { useState } from 'react';
 import { PrinterIcon } from '../icons/Icons';
 
@@ -97,8 +98,7 @@ export const PrintOptionsModal: React.FC<PrintOptionsModalProps> = ({
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full">
+        <Dialog label="Print Options" onClose={onClose} className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full">
                 <div className="p-6 border-b dark:border-slate-700">
                     <h3 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
                         <PrinterIcon className="h-5 w-5" /> Print Options
@@ -191,7 +191,6 @@ export const PrintOptionsModal: React.FC<PrintOptionsModalProps> = ({
                         <PrinterIcon className="h-4 w-4" /> Print
                     </button>
                 </div>
-            </div>
-        </div>
+        </Dialog>
     );
 };

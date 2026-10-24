@@ -1,3 +1,4 @@
+import { Dialog } from '../common/Dialog';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -518,8 +519,7 @@ export const StudentDetailPage: React.FC = () => {
 
         {/* Re-enroll Modal */}
         {showReenrollModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full">
+          <Dialog label="Re-enroll Student" onClose={() => setShowReenrollModal(false)} className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full">
               <div className="p-6 border-b dark:border-slate-700">
                 <h3 className="text-xl font-bold text-slate-800 dark:text-white">Re-enroll Student</h3>
                 <p className="text-slate-500 dark:text-slate-400 mt-1">
@@ -610,8 +610,7 @@ export const StudentDetailPage: React.FC = () => {
                   Re-enroll Student
                 </button>
               </div>
-            </div>
-          </div>
+          </Dialog>
         )}
       </div>
 

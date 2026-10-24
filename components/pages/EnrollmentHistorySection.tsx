@@ -1,3 +1,4 @@
+import { Dialog } from '../common/Dialog';
 import React, { useState } from 'react';
 import { EnrollmentUI } from '../../services/mappers';
 import { StatusBadge } from '../common/StatusBadge';
@@ -192,8 +193,7 @@ export const EnrollmentHistorySection: React.FC<EnrollmentHistorySectionProps> =
 
             {/* Edit Modal */}
             {editingEnrollmentId && editForm && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+                <Dialog label="Edit Enrollment" onClose={handleCancel} className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
                         <div className="flex items-center justify-between p-4 border-b dark:border-slate-700">
                             <h3 className="text-lg font-bold text-slate-800 dark:text-white">
                                 Edit Enrollment
@@ -365,8 +365,7 @@ export const EnrollmentHistorySection: React.FC<EnrollmentHistorySectionProps> =
                                 Save Changes
                             </button>
                         </div>
-                    </div>
-                </div>
+                </Dialog>
             )}
         </>
     );

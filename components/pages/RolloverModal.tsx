@@ -1,3 +1,4 @@
+import { Dialog } from '../common/Dialog';
 import React, { useState, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Student, StudentStatus } from '../../types';
@@ -237,8 +238,7 @@ export const RolloverModal: React.FC<RolloverModalProps> = ({ isOpen, onClose })
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+        <Dialog label="End of Year Rollover" onClose={onClose} className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
                 <div className="p-6 border-b dark:border-slate-700">
                     <h2 className="text-2xl font-bold text-slate-800 dark:text-white">End of Year Rollover</h2>
                     <p className="text-slate-500 dark:text-slate-400">Step {step} of 3</p>
@@ -362,7 +362,6 @@ export const RolloverModal: React.FC<RolloverModalProps> = ({ isOpen, onClose })
                         <button onClick={handleExecuteRollover} className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 font-bold">Start Rollover</button>
                     )}
                 </div>
-            </div>
-        </div>
+        </Dialog>
     );
 };

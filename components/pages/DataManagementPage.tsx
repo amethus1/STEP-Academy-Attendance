@@ -1,3 +1,4 @@
+import { Dialog } from '../common/Dialog';
 import React, { useState, useRef, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { defaultQueryOptions } from '../../lib/react-query';
@@ -408,8 +409,7 @@ export const DataManagementPage: React.FC = () => {
 
       {/* Import Validation Modal */}
       {showValidationModal && validationResult && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-2xl w-full p-6 max-h-[80vh] overflow-y-auto">
+        <Dialog label="Import Validation" onClose={cancelImport} className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-2xl w-full p-6 max-h-[80vh] overflow-y-auto">
             <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4">
               Import Validation {validationResult.valid ? '✓' : '✗'}
             </h3>
@@ -490,14 +490,12 @@ export const DataManagementPage: React.FC = () => {
                 </button>
               )}
             </div>
-          </div>
-        </div>
+        </Dialog>
       )}
 
       {/* Recalculate School Years Confirmation Modal */}
       {showRecalculateConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full p-6">
+        <Dialog label="Recalculate School Years?" onClose={isRecalculating ? undefined : () => setShowRecalculateConfirm(false)} className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full p-6">
             <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4">Recalculate School Years?</h3>
             <p className="text-slate-600 dark:text-slate-300 mb-2">
               This will recalculate the school year for ALL enrollments based on their registration date.
@@ -520,14 +518,12 @@ export const DataManagementPage: React.FC = () => {
                 Yes, Recalculate
               </button>
             </div>
-          </div>
-        </div>
+        </Dialog>
       )}
 
       {/* Close Old Enrollments Confirmation Modal */}
       {showCloseOldConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full p-6">
+        <Dialog label="Close Old Enrollments?" onClose={isClosingOld ? undefined : () => setShowCloseOldConfirm(false)} className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full p-6">
             <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4">Close Old Enrollments?</h3>
             <p className="text-slate-600 dark:text-slate-300 mb-2">
               This will mark all &ldquo;Active&rdquo; enrollments from <strong>previous school years</strong> as &ldquo;Completed&rdquo;.
@@ -550,8 +546,7 @@ export const DataManagementPage: React.FC = () => {
                 Yes, Close Old Enrollments
               </button>
             </div>
-          </div>
-        </div>
+        </Dialog>
       )}
 
       <div>

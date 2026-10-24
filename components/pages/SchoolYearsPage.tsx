@@ -1,3 +1,4 @@
+import { Dialog } from '../common/Dialog';
 import React, { useState } from 'react';
 import { useSchoolYears, useCreateSchoolYear, useUpdateSchoolYear, useDeleteSchoolYear } from '../../hooks/useSchoolYears';
 import { SchoolYear } from '../../types';
@@ -166,8 +167,7 @@ export const SchoolYearsPage: React.FC = () => {
             </div>
 
             {isModalOpen && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">
-                    <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-md p-6">
+                <Dialog label={editingYear ? 'Edit School Year' : 'Add School Year'} onClose={() => setIsModalOpen(false)} className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-md p-6">
                         <h2 className="text-xl font-bold mb-4 dark:text-white">{editingYear ? 'Edit School Year' : 'Add School Year'}</h2>
                         <form onSubmit={handleSubmit} className="space-y-4">
                             <div>
@@ -217,8 +217,7 @@ export const SchoolYearsPage: React.FC = () => {
                                 </button>
                             </div>
                         </form>
-                    </div>
-                </div>
+                </Dialog>
             )}
         </div>
     );

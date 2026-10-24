@@ -1,3 +1,4 @@
+import { Dialog } from '../common/Dialog';
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useUniqueStudents, useCreateStudent } from '../../hooks/useStudents';
@@ -75,8 +76,7 @@ const ColumnConfigModal: React.FC<{
 
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">
-      <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-md">
+    <Dialog label="Configure Columns" onClose={onClose} className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-md">
         <h3 className="text-lg font-bold p-4 border-b dark:border-slate-700 dark:text-white">Configure Columns</h3>
         <ul className="p-4 space-y-2 max-h-96 overflow-y-auto">
           {sortedColumns.map((col, displayIndex) => {
@@ -115,8 +115,7 @@ const ColumnConfigModal: React.FC<{
           <button onClick={onClose} className="px-4 py-2 text-sm font-semibold rounded-md border dark:border-slate-600 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600">Cancel</button>
           <button onClick={handleSave} className="px-4 py-2 text-sm font-semibold text-white bg-brand rounded-md">Save</button>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 };
 

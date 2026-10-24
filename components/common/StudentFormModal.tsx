@@ -1,3 +1,4 @@
+import { Dialog } from './Dialog';
 import React, { useState } from 'react';
 import { Student, CustomFieldDefinition } from '../../types';
 import { useDeleteStudent } from '../../hooks/useStudents';
@@ -175,8 +176,7 @@ export const StudentFormModal: React.FC<StudentFormModalProps> = ({
 
         {/* Delete Confirmation Modal */}
         {showDeleteConfirm && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-[60] flex justify-center items-center p-4">
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full p-6">
+          <Dialog label="Delete Student?" zIndexClass="z-[60]" onClose={() => setShowDeleteConfirm(false)} className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full p-6">
               <h3 className="text-xl font-bold text-red-600 dark:text-red-400 mb-4">⚠️ Delete Student?</h3>
               <p className="text-slate-700 dark:text-slate-300 mb-6">
                 Are you sure you want to <strong>PERMANENTLY</strong> delete this student?
@@ -203,8 +203,7 @@ export const StudentFormModal: React.FC<StudentFormModalProps> = ({
                   Yes, Delete Permanently
                 </button>
               </div>
-            </div>
-          </div>
+          </Dialog>
         )}
       </div>
     </div>
