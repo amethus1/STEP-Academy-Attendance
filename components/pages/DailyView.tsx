@@ -1,8 +1,10 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useStudents } from '../../hooks/useStudents';
-import { useAttendance, useAttendanceRange, useSaveAttendance, useDeleteAttendance, useHolidays, useSaveAttendanceComment } from '../../hooks/useAttendance';
+import { useAttendance, useAttendanceRange, useHolidays, useSaveAttendanceComment } from '../../hooks/useAttendance';
+import { useAttendanceMarking } from '../../hooks/useAttendanceMarking';
+import { useKeyboardEntry } from '../../hooks/useKeyboardEntry';
 import { useActiveSchoolYear } from '../../hooks/useActiveSchoolYear';
 import { useSettings } from '../../hooks/useSettings';
 import { StudentStatus, Presence } from '../../types';
@@ -27,15 +29,19 @@ const Key: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 
 export const DailyView: React.FC = () => {
   const { settings } = useSettings();
-  const [selectedDate, setSelectedDate] = useState(toISODateString(new Date()));
+  const [searchParams] = useSearchParams();
+  // Other views link here with ?date=YYYY-MM-DD to open a specific day.
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const requested = searchParams.get('date');
+    return requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : toISODateString(new Date());
+  });
+  const todayStr = toISODateString(new Date());
 
   const schoolYear = useActiveSchoolYear(selectedDate);
 
   const { data: rawStudents, isLoading: studentsLoading } = useStudents(schoolYear);
   const { data: attendanceRecords = [], isLoading: attendanceLoading } = useAttendance(selectedDate);
   const { data: holidays = [] } = useHolidays();
-  const { mutate: saveAttendance } = useSaveAttendance();
-  const { mutate: deleteAttendance } = useDeleteAttendance();
   const { mutate: saveComment } = useSaveAttendanceComment();
 
   // Convert holidays to UI format once
@@ -156,47 +162,28 @@ export const DailyView: React.FC = () => {
     setSelectedDate(toISODateString(new Date()));
   };
 
-  /**
-   * Put a set of students back to how they were marked before the last change.
-   * A student with no prior record gets their new record removed; anyone else
-   * is written back to the presence they had.
-   */
-  const restoreAttendance = useCallback((
-    date: string,
-    snapshot: { studentId: string; enrollmentId: string; presence: Presence | undefined }[]
-  ) => {
-    const toRestore = snapshot.filter(s => s.presence !== undefined);
-    const toRemove = snapshot.filter(s => s.presence === undefined);
+  const { mark, markMany } = useAttendanceMarking();
 
-    if (toRestore.length > 0) {
-      saveAttendance(toRestore.map(s => ({
-        id: crypto.randomUUID(),
-        enrollment_id: s.enrollmentId,
-        student_id: s.studentId,
-        date,
-        presence: s.presence as Presence,
-        comment: null
-      })));
-    }
-    toRemove.forEach(s => deleteAttendance({ studentId: s.studentId, date }));
-  }, [saveAttendance, deleteAttendance]);
+  // No attendance is due on weekends and holidays, and a stray mark there
+  // still counts toward days attended, moving the student's release date. The
+  // controls are locked on those days, with an explicit unlock for programs
+  // that hold a makeup session.
+  const [unlockedDate, setUnlockedDate] = useState<string | null>(null);
+  // Future dates too: a Present recorded ahead of time counts as attended
+  // before the student has actually come in.
+  const isFutureDate = selectedDate > todayStr;
+  const noAttendanceDue = !dayCompleteness.isSchoolDay || isFutureDate;
+  const markingLocked = noAttendanceDue && unlockedDate !== selectedDate;
 
   const markAllPresent = () => {
-    if (finalFilteredStudents.length === 0) return;
-
+    if (markingLocked) return;
     const active = finalFilteredStudents.filter(s => s.status === StudentStatus.Active);
     if (active.length === 0) return;
 
-    // Captured before the write so Undo can put every student back, including
-    // the ones this overwrites rather than fills in. The date is captured too,
-    // so undoing after navigating to another day still targets the right one.
-    const markedDate = selectedDate;
-    const snapshot = active.map(s => ({
-      studentId: s.id,
-      enrollmentId: s.enrollmentId,
-      presence: attendanceByStudent[s.id]
-    }));
-    const overwritten = snapshot.filter(s => s.presence !== undefined && s.presence !== Presence.Present).length;
+    const overwritten = active.filter(s => {
+      const current = attendanceByStudent[s.id];
+      return current !== undefined && current !== Presence.Present;
+    }).length;
 
     // Only interrupt when this would overwrite marks already made; filling in
     // blanks is the common case and Undo covers a mistake either way.
@@ -204,137 +191,36 @@ export const DailyView: React.FC = () => {
       `${overwritten} ${overwritten === 1 ? 'student is' : 'students are'} already marked with another status. Overwrite and mark all ${active.length} Present?`
     )) return;
 
-    const records = active.map(s => ({
-      id: crypto.randomUUID(),
-      enrollment_id: s.enrollmentId,
-      student_id: s.id,
-      date: markedDate,
-      presence: Presence.Present,
-      comment: null
-    }));
-
-    saveAttendance(records, {
-      onSuccess: () => {
-        toast.success(
-          `Marked ${records.length} ${records.length === 1 ? 'student' : 'students'} Present` +
-          (overwritten > 0 ? ` (${overwritten} changed from another status)` : ''),
-          { action: { label: 'Undo', onClick: () => restoreAttendance(markedDate, snapshot) } }
-        );
-      }
-    });
+    markMany(active.map(s => ({ student: s, current: attendanceByStudent[s.id] })), selectedDate, Presence.Present);
   };
 
   const handleMarkAttendance = useCallback((studentId: string, currentPresence: Presence | undefined, targetPresence: Presence) => {
-    // enrollment_id is NOT NULL. Asserting non-null on the lookup previously let
-    // an undefined slip through and the insert failed at the database instead.
+    if (markingLocked) return;
     const student = studentsInYear.find(s => s.id === studentId);
-    if (!student?.enrollmentId) {
-      console.error('No enrollment found for student', studentId, 'in', schoolYear);
-      toast.error('Could not save attendance: this student has no enrollment for the selected school year.');
-      return;
-    }
-
-    const name = `${student.firstName} ${student.lastName}`;
-    const markedDate = selectedDate;
-    const snapshot = [{ studentId, enrollmentId: student.enrollmentId, presence: currentPresence }];
-    const undo = { action: { label: 'Undo', onClick: () => restoreAttendance(markedDate, snapshot) } };
-
-    // Clicking the status a student already has clears it.
-    const newPresence = currentPresence === targetPresence ? null : targetPresence;
-
-    if (newPresence === null) {
-      deleteAttendance({ studentId, date: markedDate }, {
-        onSuccess: () => toast.success(`Cleared ${name}'s attendance`, undo)
-      });
-      return;
-    }
-
-    saveAttendance([{
-      id: crypto.randomUUID(),
-      enrollment_id: student.enrollmentId,
-      student_id: studentId,
-      date: markedDate,
-      presence: newPresence,
-      comment: null
-    }], {
-      onSuccess: () => toast.success(`${name} marked ${newPresence}`, undo)
-    });
-  }, [studentsInYear, schoolYear, selectedDate, restoreAttendance, saveAttendance, deleteAttendance]);
+    if (!student) return;
+    mark(student, selectedDate, currentPresence, targetPresence);
+  }, [markingLocked, studentsInYear, selectedDate, mark]);
 
   // --- Keyboard entry ---
-  // Marking a class of 30 is otherwise 30 trips to the mouse. While active,
-  // arrows move between students and a single letter records their status.
-  const [keyboardIndex, setKeyboardIndex] = useState<number | null>(null);
-  const keyboardActive = keyboardIndex !== null;
-
   const markableStudents = useMemo(
     () => finalFilteredStudents.filter(s => s.status === StudentStatus.Active),
     [finalFilteredStudents]
   );
 
-  // Leave keyboard mode if filtering empties the list out from under it.
-  const focusedStudent = keyboardIndex === null ? undefined : markableStudents[keyboardIndex];
-
-  const exitKeyboardMode = useCallback(() => setKeyboardIndex(null), []);
-
-  useEffect(() => {
-    if (!keyboardActive) return;
-
-    const PRESENCE_KEYS: Record<string, Presence> = {
-      p: Presence.Present,
-      a: Presence.Absent,
-      t: Presence.Tardy,
-      e: Presence.Excused
-    };
-
-    const handler = (event: KeyboardEvent) => {
-      // Never steal keystrokes from a note field or any other input.
-      const target = event.target as HTMLElement | null;
-      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
-      if (target?.isContentEditable) return;
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-
-      const key = event.key.toLowerCase();
-
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        exitKeyboardMode();
-        return;
-      }
-
-      if (event.key === 'ArrowDown' || key === 'j') {
-        event.preventDefault();
-        setKeyboardIndex(i => Math.min((i ?? 0) + 1, markableStudents.length - 1));
-        return;
-      }
-
-      if (event.key === 'ArrowUp' || key === 'k') {
-        event.preventDefault();
-        setKeyboardIndex(i => Math.max((i ?? 0) - 1, 0));
-        return;
-      }
-
-      const student = markableStudents[keyboardIndex];
-      if (!student) return;
-
-      if (PRESENCE_KEYS[key]) {
-        event.preventDefault();
-        handleMarkAttendance(student.id, attendanceByStudent[student.id], PRESENCE_KEYS[key]);
-        // Advance so a run of keystrokes walks the roster.
-        setKeyboardIndex(i => Math.min((i ?? 0) + 1, markableStudents.length - 1));
-        return;
-      }
-
-      if (event.key === 'Backspace' || event.key === 'Delete') {
-        event.preventDefault();
-        const current = attendanceByStudent[student.id];
-        if (current) handleMarkAttendance(student.id, current, current);
-      }
-    };
-
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [keyboardActive, keyboardIndex, markableStudents, attendanceByStudent, exitKeyboardMode, handleMarkAttendance]);
+  const keyboard = useKeyboardEntry({
+    rowCount: markableStudents.length,
+    onMark: useCallback((row: number, _col: number, presence: Presence) => {
+      const student = markableStudents[row];
+      if (student) handleMarkAttendance(student.id, attendanceByStudent[student.id], presence);
+    }, [markableStudents, attendanceByStudent, handleMarkAttendance]),
+    onClear: useCallback((row: number) => {
+      const student = markableStudents[row];
+      const current = student && attendanceByStudent[student.id];
+      if (current) handleMarkAttendance(student.id, current, current);
+    }, [markableStudents, attendanceByStudent, handleMarkAttendance])
+  });
+  const keyboardActive = keyboard.active;
+  const focusedStudent = keyboard.row === null ? undefined : markableStudents[keyboard.row];
 
   // Keep the focused row on screen as the selection moves.
   useEffect(() => {
@@ -392,6 +278,7 @@ export const DailyView: React.FC = () => {
                 key={p}
                 currentPresence={currentPresence}
                 targetPresence={p}
+                disabled={markingLocked}
                 onClick={() => handleMarkAttendance(s.id, currentPresence, p)}
               />
             ))}
@@ -454,9 +341,9 @@ export const DailyView: React.FC = () => {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => (keyboardActive ? exitKeyboardMode() : setKeyboardIndex(0))}
+            onClick={() => (keyboardActive ? keyboard.stop() : keyboard.start())}
             aria-pressed={keyboardActive}
-            disabled={markableStudents.length === 0}
+            disabled={markableStudents.length === 0 || markingLocked}
             className={`px-4 py-2 font-semibold rounded-md shadow-sm transition-colors border disabled:opacity-50 disabled:cursor-not-allowed ${keyboardActive
               ? 'bg-brand text-white border-brand'
               : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600'
@@ -464,7 +351,7 @@ export const DailyView: React.FC = () => {
           >
             {keyboardActive ? 'Exit keyboard entry' : 'Keyboard entry'}
           </button>
-          <button onClick={markAllPresent} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-md shadow-sm transition-colors">
+          <button onClick={markAllPresent} disabled={markingLocked} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-md shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
             Mark All Present
           </button>
         </div>
@@ -491,12 +378,33 @@ export const DailyView: React.FC = () => {
 
       {/* Completeness: a silently unmarked day under-counts served days. */}
       <div aria-live="polite" className="space-y-3">
-        {!dayCompleteness.isSchoolDay ? (
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-sm">
-            <CalendarDaysIcon className="h-5 w-5 flex-shrink-0" />
-            <span>
-              No attendance expected — {dayCompleteness.holidayName || 'this date is not a school day'}.
+        {noAttendanceDue ? (
+          <div className="flex items-center justify-between gap-3 flex-wrap p-3 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-sm">
+            <span className="flex items-center gap-2">
+              <CalendarDaysIcon className="h-5 w-5 flex-shrink-0" />
+              <span>
+                No attendance expected — {dayCompleteness.holidayName
+                  || (!dayCompleteness.isSchoolDay ? 'this date is not a school day' : 'this date is in the future')}.
+                {markingLocked
+                  ? ' Marking is locked so a stray click does not count as a day attended.'
+                  : ' Marking is unlocked for this date; anything recorded counts toward days attended.'}
+              </span>
             </span>
+            {markingLocked ? (
+              <button
+                onClick={() => setUnlockedDate(selectedDate)}
+                className="px-3 py-1.5 rounded-md bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 font-semibold hover:bg-slate-50 dark:hover:bg-slate-600"
+              >
+                Record attendance anyway
+              </button>
+            ) : (
+              <button
+                onClick={() => { setUnlockedDate(null); keyboard.stop(); }}
+                className="px-3 py-1.5 rounded-md font-semibold hover:underline"
+              >
+                Lock again
+              </button>
+            )}
           </div>
         ) : dayCompleteness.expected === 0 ? null : dayCompleteness.unmarked === 0 ? (
           <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-300 text-sm border border-emerald-200 dark:border-emerald-800">

@@ -1,7 +1,8 @@
 import React, { memo } from 'react';
 import { Link } from 'react-router-dom';
 import { ExtendedStudent } from '../../services/mappers';
-import { Presence, StudentStatus } from '../../types';
+import { Presence } from '../../types';
+import { canRecordAttendance } from '../../services/attendanceCompleteness';
 import { toISODateString, formatDateForDisplay } from '../../services/dateUtils';
 import { AttendanceButton } from '../common/AttendanceButton';
 import { StatusBadge } from '../common/StatusBadge';
@@ -11,22 +12,16 @@ interface WeeklyStudentRowProps {
     displayDays: Date[];
     attendanceMap: Record<string, Presence>; // Map date -> presence for this student
     fixedColumns: { id: string; label: string; isSticky?: boolean; widthClass?: string }[];
-    sortConfig: { key: string; direction: 'asc' | 'desc' }; // Used for column highlighting if needed? Or just render order? 
-    // Actually row doesn't need sortConfig if columns are fixed passed in.
-    // But wait, getCellValue logic was in WeeklyView.
-
     onMarkAttendance: (studentId: string, date: string, current: Presence | undefined, target: Presence) => void;
     isHoliday: (date: string) => boolean;
+    holidayDates: Set<string>;
     todayStr: string;
 
     isSelected?: boolean;
     onToggleSelection?: (id: string) => void;
+    /** Index into displayDays of the keyboard-focused cell in this row, if any. */
+    focusedDayIndex?: number | null;
 }
-
-// Helper moved here or imported? 
-// Let's copy getCellValue logic or simpler: pass a renderCell function? 
-// Passing function breaks memo if function is not stable.
-// Let's replicate getCellValue logic here as it's pure presentation.
 
 const getCellValue = (student: ExtendedStudent, columnId: string) => {
     switch (columnId) {
@@ -55,9 +50,9 @@ const getCellValue = (student: ExtendedStudent, columnId: string) => {
     }
 }
 
-export const WeeklyStudentRow = memo(({ student, displayDays, attendanceMap, fixedColumns, onMarkAttendance, isHoliday, todayStr, isSelected, onToggleSelection }: WeeklyStudentRowProps) => {
+export const WeeklyStudentRow = memo(({ student, displayDays, attendanceMap, fixedColumns, onMarkAttendance, isHoliday, holidayDates, todayStr, isSelected, onToggleSelection, focusedDayIndex }: WeeklyStudentRowProps) => {
     return (
-        <tr className={`hover:bg-slate-50 dark:hover:bg-slate-800 ${isSelected ? 'bg-blue-50 dark:bg-blue-900/30' : ''}`}>
+        <tr data-weekly-row={student.id} className={`hover:bg-slate-50 dark:hover:bg-slate-800 ${isSelected ? 'bg-blue-50 dark:bg-blue-900/30' : ''}`}>
             {fixedColumns.map((col, index) => (
                 <td key={col.id} className={`py-3 px-4 whitespace-nowrap text-sm font-medium text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 ${col.isSticky ? `sticky z-10 ${index === 0 ? 'left-0' : (index === 1 ? 'left-10' : 'left-40')}` : ''} ${col.widthClass ? col.widthClass : ''} ${isSelected ? '!bg-blue-50 dark:!bg-blue-900/30' : ''}`}>
                     {col.id === 'select' ? (
@@ -71,22 +66,21 @@ export const WeeklyStudentRow = memo(({ student, displayDays, attendanceMap, fix
                     ) : getCellValue(student, col.id)}
                 </td>
             ))}
-            {displayDays.map(day => {
+            {displayDays.map((day, dayIndex) => {
                 const dateStr = toISODateString(day);
                 const presence = attendanceMap[dateStr];
 
-                const isFuture = dateStr > todayStr;
-                const isBeforeEntry = dateStr < student.entryDate; // entryDate from mapper
                 const isDayHoliday = isHoliday(dateStr);
-                const isDisabled = student.status !== StudentStatus.Active || isFuture || isBeforeEntry || isDayHoliday;
+                const isDisabled = !canRecordAttendance(student, dateStr, todayStr, holidayDates);
                 const isRegistrationDay = student.registrationDate === dateStr;
+                const focusRing = focusedDayIndex === dayIndex ? 'ring-2 ring-inset ring-sky-400 bg-sky-50 dark:bg-sky-900/30' : '';
 
                 if (isDayHoliday) {
-                    return <td key={dateStr} className="py-3 px-4 text-center bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 text-xs font-bold">HOLIDAY</td>
+                    return <td key={dateStr} className={`py-3 px-4 text-center bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 text-xs font-bold ${focusRing}`}>HOLIDAY</td>
                 }
 
                 return (
-                    <td key={dateStr} className="py-3 px-4 text-center relative">
+                    <td key={dateStr} className={`py-3 px-4 text-center relative ${focusRing}`}>
                         {isRegistrationDay && <span className="absolute top-1 right-1 text-xs font-bold text-purple-600 dark:text-purple-400" title={`Registered on ${formatDateForDisplay(dateStr)}`}>R</span>}
                         {isDisabled ? <div className="h-8 w-16" /> : (
                             <div className="flex justify-center items-center gap-2">
@@ -126,16 +120,21 @@ export const WeeklyStudentRow = memo(({ student, displayDays, attendanceMap, fix
             })}
         </tr>
     );
-}, (prev, next) => {
-    // Custom comparison for performance if needed, or rely on shallow compare.
-    // objects: student (ref), displayDays (ref), attendanceMap (ref), ...
-    // attendanceMap needs to be stable or value-equal? 
-    // If we pass a NEW object { date: presence } every time, React.memo fails.
-    // So parent must memoize the map.
-    return prev.student === next.student &&
-        prev.attendanceMap === next.attendanceMap &&
-        prev.todayStr === next.todayStr &&
-        prev.displayDays === next.displayDays; // displayDays ref should be stable for a week
-});
+}, (prev, next) =>
+    // Every prop that affects the output has to be compared here. Selection was
+    // missing, so ticking a row's checkbox did not re-render it and React put
+    // the controlled checkbox straight back.
+    prev.student === next.student &&
+    prev.attendanceMap === next.attendanceMap &&
+    prev.todayStr === next.todayStr &&
+    prev.displayDays === next.displayDays &&
+    prev.isSelected === next.isSelected &&
+    prev.focusedDayIndex === next.focusedDayIndex &&
+    prev.holidayDates === next.holidayDates &&
+    prev.isHoliday === next.isHoliday &&
+    prev.onMarkAttendance === next.onMarkAttendance &&
+    prev.onToggleSelection === next.onToggleSelection &&
+    prev.fixedColumns === next.fixedColumns
+);
 
 WeeklyStudentRow.displayName = 'WeeklyStudentRow';

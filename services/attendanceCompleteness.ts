@@ -102,3 +102,19 @@ export const findMissedSchoolDays = (
         studentsExpectedOn(roster, date).length > 0
     );
 };
+
+/**
+ * Whether a student's attendance can be recorded for `isoDate` from a grid
+ * cell: an active student who had started by then, on a school day that is not
+ * in the future.
+ */
+export const canRecordAttendance = (
+    student: CompletenessStudent,
+    isoDate: string,
+    today: string,
+    holidayDates: Set<string>
+): boolean =>
+    student.status === ACTIVE &&
+    student.entryDate <= isoDate &&
+    isoDate <= today &&
+    isSchoolDay(isoDate, holidayDates);

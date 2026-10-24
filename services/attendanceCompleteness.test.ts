@@ -5,6 +5,7 @@ import {
     studentsExpectedOn,
     getDayCompleteness,
     findMissedSchoolDays,
+    canRecordAttendance,
     type CompletenessStudent
 } from './attendanceCompleteness';
 
@@ -132,5 +133,32 @@ describe('findMissedSchoolDays', () => {
 
     it('returns nothing when the lookback window is empty', () => {
         expect(findMissedSchoolDays(roster, new Set(), new Set(), WED, 0)).toEqual([]);
+    });
+});
+
+describe('canRecordAttendance', () => {
+    const s = student({ id: 'x', entryDate: TUE });
+    const today = WED;
+
+    it('allows a school day on or after entry, up to today', () => {
+        expect(canRecordAttendance(s, TUE, today, new Set())).toBe(true);
+        expect(canRecordAttendance(s, WED, today, new Set())).toBe(true);
+    });
+
+    it('refuses days before the student started', () => {
+        expect(canRecordAttendance(s, MON, today, new Set())).toBe(false);
+    });
+
+    it('refuses future days', () => {
+        expect(canRecordAttendance(s, '2024-09-05', today, new Set())).toBe(false);
+    });
+
+    it('refuses weekends and holidays', () => {
+        expect(canRecordAttendance(student({ id: 'y' }), SAT, '2024-09-09', new Set())).toBe(false);
+        expect(canRecordAttendance(s, TUE, today, new Set([TUE]))).toBe(false);
+    });
+
+    it('refuses students who are not active', () => {
+        expect(canRecordAttendance({ ...s, status: 'Withdrawn' }, TUE, today, new Set())).toBe(false);
     });
 });
