@@ -1,20 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "enables the default permissions",
+  "description": "Permissions for the main window. File access is limited to the app's own folders (database, settings, default backups) plus files and folders the user explicitly picks in an Open or Save dialog; the dialog plugin grants those at runtime and the persisted-scope plugin remembers them across restarts, which keeps a chosen backup folder working.",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
     "core:webview:allow-print",
-    "fs:default",
     "dialog:default",
-    "fs:allow-appconfig-read",
-    "fs:allow-appconfig-write",
-    "fs:allow-appconfig-meta",
-    "fs:allow-document-read-recursive",
-    "fs:allow-document-write-recursive",
+    "fs:default",
     "fs:allow-app-read-recursive",
     "fs:allow-app-write-recursive",
     "sql:default",

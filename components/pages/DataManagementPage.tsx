@@ -68,6 +68,7 @@ export const DataManagementPage: React.FC = () => {
     try {
       const result = await performBackup(await resolveBackupFolder(settings));
       if (result.success) {
+        saveSettings({ lastAutoBackupDate: new Date().toISOString() });
         toast.success(`Backup saved to ${result.filePath}`);
         // Refresh settings to show updated last backup date
         // Refresh settings/queries

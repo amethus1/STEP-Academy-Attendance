@@ -40,7 +40,7 @@ const NavItem: React.FC<{ to: string; icon: React.ReactNode; children: React.Rea
 
 const App: React.FC = () => {
   const location = useLocation();
-  const { settings } = useSettings();
+  const { settings, saveSettings } = useSettings();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
@@ -63,14 +63,17 @@ const App: React.FC = () => {
   // console, so a school could run for months believing it had backups.
   useEffect(() => {
     runAutoBackupIfNeeded().then((result) => {
-      if (result && !result.success) {
+      if (result?.success) {
+        // The service stored the date; mirror it so "Last backup" shows it.
+        saveSettings({ lastAutoBackupDate: new Date().toISOString() });
+      } else if (result) {
         toast.error(`Automatic backup failed: ${result.error}. Check the backup folder in Settings.`, { duration: 15000 });
       }
     }).catch((err) => {
       console.error('Auto-backup check failed:', err);
       toast.error('Automatic backup could not run. Check the backup folder in Settings.', { duration: 15000 });
     });
-  }, []); // Run once on mount
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- run once on mount
 
 
   const getTitle = () => {

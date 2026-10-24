@@ -23,7 +23,7 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   // Refs for debouncing and pause control
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const pendingSettingsRef = useRef<AppSettings | null>(null);
+  const pendingChangesRef = useRef<Partial<AppSettings> | null>(null);
   const isPausedRef = useRef(false);
 
   // Load settings from SQLite asynchronously
@@ -59,51 +59,51 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
   }, []);
 
+  // Changes waiting to be written. Only the keys the user actually changed are
+  // saved: writing the whole in-memory settings object overwrote values that
+  // were stored elsewhere since startup, such as the last-backup date or
+  // settings restored by an import.
+  const flushPendingChanges = useCallback((failureMessage: string) => {
+    const changes = pendingChangesRef.current;
+    pendingChangesRef.current = null;
+    if (!changes) return;
+    settingsService.updateSettings(changes).catch(error => {
+      console.error('Failed to persist settings:', error);
+      toast.error(failureMessage);
+    });
+  }, []);
+
   // Resume settings saves (call after import)
   const resumeSettingsSave = useCallback(() => {
     isPausedRef.current = false;
-    // If there were pending settings, save them now
-    if (pendingSettingsRef.current) {
-      settingsService.saveSettings(pendingSettingsRef.current).catch(error => {
-        console.error('Failed to persist pending settings:', error);
-        toast.error('Failed to save settings after import. Your last change may not have persisted.');
-      });
-      pendingSettingsRef.current = null;
-    }
-  }, []);
+    flushPendingChanges('Failed to save settings after import. Your last change may not have persisted.');
+  }, [flushPendingChanges]);
 
   const handleSaveSettings = useCallback((newSettings: Partial<AppSettings>) => {
-    setSettings(prevSettings => {
-      const updatedSettings = { ...prevSettings, ...newSettings };
+    setSettings(prevSettings => ({ ...prevSettings, ...newSettings }));
 
-      // Always update localStorage synchronously for immediate persistence
-      localStorage.setItem('attendanceAppSettings', JSON.stringify(updatedSettings));
+    // Keep the synchronous cache current for the next launch's first render.
+    try {
+      localStorage.setItem('attendanceAppSettings', JSON.stringify({ ...settingsService.getSettingsSync(), ...newSettings }));
+    } catch {
+      // The cache is a convenience; the database is the source of truth.
+    }
 
-      // Skip DB save if paused (during import)
-      if (isPausedRef.current) {
-        pendingSettingsRef.current = updatedSettings;
-        return updatedSettings;
+    pendingChangesRef.current = { ...pendingChangesRef.current, ...newSettings };
+
+    // Held until resumeSettingsSave while an import is running.
+    if (isPausedRef.current) return;
+
+    // Debounce DB writes to prevent constant writes
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = setTimeout(() => {
+      if (!isPausedRef.current) {
+        flushPendingChanges('Failed to save settings. Your last change may not have persisted.');
       }
-
-      // Debounce DB save to prevent constant writes
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-
-      pendingSettingsRef.current = updatedSettings;
-      saveTimeoutRef.current = setTimeout(() => {
-        if (pendingSettingsRef.current && !isPausedRef.current) {
-          settingsService.saveSettings(pendingSettingsRef.current).catch(error => {
-            console.error('Failed to persist settings:', error);
-            toast.error('Failed to save settings. Your last change may not have persisted.');
-          });
-          pendingSettingsRef.current = null;
-        }
-      }, SETTINGS_SAVE_DEBOUNCE_MS);
-
-      return updatedSettings;
-    });
-  }, []);
+    }, SETTINGS_SAVE_DEBOUNCE_MS);
+  }, [flushPendingChanges]);
 
   const value = { settings, saveSettings: handleSaveSettings, isSettingsLoading, pauseSettingsSave, resumeSettingsSave };
 

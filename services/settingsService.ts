@@ -110,6 +110,22 @@ export const saveSettings = async (settings: AppSettings): Promise<void> => {
 };
 
 /**
+ * Write only the given keys, leaving every other stored setting alone.
+ *
+ * Prefer this to saveSettings: writing a whole settings object overwrites keys
+ * that changed elsewhere since that object was read. That is how the backup
+ * date kept being reset, so "daily" backups ran on every launch.
+ */
+export const updateSettings = async (changes: Partial<AppSettings>): Promise<void> => {
+  await saveSettingsToDB(changes);
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...getSettingsSync(), ...changes }));
+  } catch {
+    // The cache is a convenience; the database is the source of truth.
+  }
+};
+
+/**
  * Save partial settings update to SQLite.
  */
 export const saveSettingsToDB = async (settings: Partial<AppSettings>): Promise<void> => {

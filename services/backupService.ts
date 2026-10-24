@@ -3,7 +3,7 @@ import { getExportData, describeImportFailure } from '../db/queries';
 import type { DBStudent, DBEnrollment, DBAttendance, DBHoliday } from '../db/types';
 import { queryClient } from '../lib/react-query';
 import { getDb } from '../db';
-import { getSettings, saveSettings } from './settingsService';
+import { getSettings, updateSettings } from './settingsService';
 
 /** Backup files this app writes start with one of these, so pruning never touches anything else. */
 export const AUTO_BACKUP_PREFIX = 'step-academy-backup-';
@@ -127,8 +127,9 @@ export const performBackup = async (
         await pruneBackups(folderPath, prefix, keep);
 
         if (recordAsLastBackup) {
-            const currentSettings = await getSettings();
-            await saveSettings({ ...currentSettings, lastAutoBackupDate: new Date().toISOString() });
+            // Only this key: rewriting the whole settings object clobbered changes
+            // made elsewhere in the meantime.
+            await updateSettings({ lastAutoBackupDate: new Date().toISOString() });
         }
 
         return { success: true, filePath };
