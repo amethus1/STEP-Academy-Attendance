@@ -12,14 +12,14 @@ import { useActiveSchoolYear } from '../../hooks/useActiveSchoolYear';
 import { StatCard } from '../common/StatCard';
 import { AttendanceTrendChart } from '../common/AttendanceTrendChart';
 import { PageLoadingSkeleton } from '../common/SkeletonLoader';
-import { UserGroupIcon, ChartBarIcon, CalendarDaysIcon, PlusIcon, CheckCircleIcon } from '../icons/Icons';
+import { UserGroupIcon, ChartBarIcon, CalendarDaysIcon, PlusIcon, CheckCircleIcon, ExclamationTriangleIcon } from '../icons/Icons';
 import { StudentFormModal } from '../common/StudentFormModal';
 import { DBStudent, DBEnrollment } from '../../db/queries';
 
 type TimePeriod = '7days' | '14days' | '30days' | 'year';
 
 export const DashboardPage: React.FC = () => {
-    const { settings } = useSettings();
+    const { settings, saveSettings } = useSettings();
     const [timePeriod, setTimePeriod] = useState<TimePeriod>('14days');
     const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
 
@@ -164,6 +164,27 @@ export const DashboardPage: React.FC = () => {
                 existingStudents={existingStudentData}
                 customFieldDefinitions={settings.customFieldDefinitions || []}
             />
+
+            {/* Installs from before backups defaulted on still have them off. */}
+            {settings.autoBackupFrequency === 'off' && (
+                <div className="flex items-center justify-between gap-3 flex-wrap p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200">
+                    <span className="flex items-center gap-2 text-sm">
+                        <ExclamationTriangleIcon className="h-5 w-5 flex-shrink-0" />
+                        <span>
+                            <strong>Automatic backups are off.</strong> If this computer fails, your attendance records cannot be recovered.
+                        </span>
+                    </span>
+                    <span className="flex items-center gap-3">
+                        <button
+                            onClick={() => saveSettings({ autoBackupFrequency: 'daily' })}
+                            className="px-3 py-1.5 rounded-md bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold"
+                        >
+                            Turn on daily backups
+                        </button>
+                        <Link to="/data" className="text-sm font-medium hover:underline">Backup settings</Link>
+                    </span>
+                </div>
+            )}
 
             {/* Welcome Section */}
             <div className="flex justify-between items-center">

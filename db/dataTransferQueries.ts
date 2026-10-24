@@ -1,6 +1,7 @@
 // Data import/export database queries
-import { getDb, withTransaction } from './index';
+import { getDb } from './index';
 import { createAuditLog } from './auditQueries';
+import { runAtomicImport, type ImportPayload } from './atomicImport';
 import {
     DBStudent,
     DBEnrollment,
@@ -37,102 +38,46 @@ export const getExportData = async () => {
     return { students, enrollments, attendance, holidays, schoolYears, settings };
 };
 
-export const importData = async (data: {
-    students: DBStudent[],
-    enrollments: DBEnrollment[],
-    attendance: DBAttendance[],
-    holidays: DBHoliday[],
-    schoolYears?: DBSchoolYear[],
-    settings?: Record<string, any>
-}) => {
+/**
+ * Replace all students, enrollments and attendance (and holidays / school
+ * years when the file includes them) with the contents of an import or backup.
+ *
+ * All or nothing: a safety copy of the current data is written first, and the
+ * replacement itself either completes or leaves the existing data exactly as it
+ * was. Throws ImportValidationError, with the problems listed, when the file is
+ * rejected.
+ */
+export const importData = async (data: ImportPayload) => {
     const { acquireWriteLock, getDb } = await import('./index');
+    const { writeSafetyBackup } = await import('../services/backupService');
 
-    // Acquire write lock but don't use BEGIN/COMMIT to avoid lock contention
     const releaseLock = await acquireWriteLock();
 
     try {
         const db = await getDb();
 
         // Snapshot counts of what we're about to overwrite so an audit-log
-        // reader can see exactly what was replaced (useful for recovery if
-        // the import was unintentional).
-        const [
-            [{ count: studentsBefore }],
-            [{ count: enrollmentsBefore }],
-            [{ count: attendanceBefore }],
-            [{ count: holidaysBefore }],
-            [{ count: schoolYearsBefore }]
-        ] = await Promise.all([
-            db.select<{ count: number }[]>("SELECT COUNT(*) as count FROM students"),
-            db.select<{ count: number }[]>("SELECT COUNT(*) as count FROM enrollments"),
-            db.select<{ count: number }[]>("SELECT COUNT(*) as count FROM attendance"),
-            db.select<{ count: number }[]>("SELECT COUNT(*) as count FROM holidays"),
-            db.select<{ count: number }[]>("SELECT COUNT(*) as count FROM school_years")
-        ]);
+        // reader can see exactly what was replaced.
+        const countOf = async (table: string) =>
+            (await db.select<{ count: number }[]>(`SELECT COUNT(*) as count FROM ${table}`))[0]?.count ?? 0;
+        const before = {
+            students: await countOf('students'),
+            enrollments: await countOf('enrollments'),
+            attendance: await countOf('attendance'),
+            holidays: await countOf('holidays'),
+            schoolYears: await countOf('school_years')
+        };
+
+        const safetyCopy = await writeSafetyBackup();
 
         await createAuditLog(
             'Import Started',
             'System',
             null,
-            `Replacing existing data: ${studentsBefore} students, ${enrollmentsBefore} enrollments, ${attendanceBefore} attendance records, ${holidaysBefore} holidays, ${schoolYearsBefore} school years`
+            `Replacing existing data: ${before.students} students, ${before.enrollments} enrollments, ${before.attendance} attendance records, ${before.holidays} holidays, ${before.schoolYears} school years. Safety copy: ${safetyCopy}`
         );
 
-        // Clear existing data (order matters due to foreign keys)
-        await db.execute("DELETE FROM attendance");
-        await db.execute("DELETE FROM enrollments");
-        await db.execute("DELETE FROM students");
-        await db.execute("DELETE FROM holidays");
-        await db.execute("DELETE FROM school_years");
-
-        // Insert new data
-        for (const s of data.students) {
-            await db.execute(
-                `INSERT INTO students (id, student_number, first_name, last_name, dob, gender, guardian_name, guardian_phone, guardian_email, emergency_contact_name, emergency_contact_phone, photo_url, custom_fields)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-                // Older export files predate gender/guardian_email, so default them.
-                [s.id, s.student_number, s.first_name, s.last_name, s.dob, s.gender ?? null, s.guardian_name, s.guardian_phone, s.guardian_email ?? null, s.emergency_contact_name, s.emergency_contact_phone, s.photo_url, s.custom_fields]
-            );
-        }
-
-        for (const e of data.enrollments) {
-            await db.execute(
-                `INSERT INTO enrollments (id, student_id, school_year, start_date, end_date, grade_level, campus, status, sped_504, drg_offense, days_assigned, credit_days, comments)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-                [e.id, e.student_id, e.school_year, e.start_date, e.end_date, e.grade_level, e.campus, e.status, e.sped_504, e.drg_offense, e.days_assigned, e.credit_days, e.comments]
-            );
-        }
-
-        for (const a of data.attendance) {
-            await db.execute(
-                `INSERT INTO attendance (id, student_id, enrollment_id, date, presence, comment) VALUES ($1, $2, $3, $4, $5, $6)`,
-                [a.id, a.student_id, a.enrollment_id, a.date, a.presence, a.comment ?? null]
-            );
-        }
-
-        for (const h of data.holidays) {
-            await db.execute(
-                `INSERT INTO holidays (date, name, school_year) VALUES ($1, $2, $3)`,
-                [h.date, h.name, h.school_year]
-            );
-        }
-
-        if (data.schoolYears && data.schoolYears.length > 0) {
-            for (const sy of data.schoolYears) {
-                await db.execute(
-                    `INSERT INTO school_years (id, name, start_date, end_date) VALUES ($1, $2, $3, $4)`,
-                    [sy.id, sy.name, sy.start_date, sy.end_date]
-                );
-            }
-        }
-
-        if (data.settings) {
-            for (const [key, value] of Object.entries(data.settings)) {
-                await db.execute(
-                    `INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ($1, $2, datetime('now'))`,
-                    [key, JSON.stringify(value)]
-                );
-            }
-        }
+        await runAtomicImport(db, data);
 
         await createAuditLog('Import Data', 'System', null, `Imported ${data.students.length} students, ${data.attendance.length} attendance records`);
     } finally {

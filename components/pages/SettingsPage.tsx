@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useSettings } from '../../hooks/useSettings';
 import { useSchoolYears } from '../../hooks/useSchoolYears';
-import { Theme, DateFormat } from '../../types';
+import { Theme, DateFormat, AutoBackupFrequency } from '../../types';
 import { SunIcon, MoonIcon, AcademicCapIcon, FolderIcon } from '../icons/Icons';
 import { ImportWizard } from '../common/ImportWizard';
 import { useLogAction } from '../../hooks/useAuditLogs';
@@ -147,7 +147,7 @@ export const SettingsPage: React.FC = () => {
                             <input
                                 type="text"
                                 readOnly
-                                value={settings.backupFolderPath || 'Not configured'}
+                                value={settings.backupFolderPath || "The app's own data folder (default)"}
                                 className="flex-1 p-2 border border-slate-300 dark:border-slate-600 rounded-md bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-sm"
                             />
                             <button
@@ -174,8 +174,18 @@ export const SettingsPage: React.FC = () => {
                                 <FolderIcon className="h-5 w-5" />
                             </button>
                         </div>
-                        {!settings.backupFolderPath && (
-                            <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">Please select a folder to enable auto-backups.</p>
+                        {settings.backupFolderPath ? (
+                            <button
+                                type="button"
+                                onClick={() => saveSettings({ backupFolderPath: null })}
+                                className="text-xs text-brand hover:underline mt-1"
+                            >
+                                Use the app&rsquo;s own folder instead
+                            </button>
+                        ) : (
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                Backups work without choosing a folder. To keep copies off this computer, pick a folder that syncs to OneDrive, Google Drive or a network share.
+                            </p>
                         )}
                     </div>
 
@@ -183,8 +193,7 @@ export const SettingsPage: React.FC = () => {
                         label="Auto-Backup Frequency"
                         id="backup-frequency"
                         value={settings.autoBackupFrequency}
-                        onChange={e => saveSettings({ autoBackupFrequency: e.target.value as any })}
-                        disabled={!settings.backupFolderPath}
+                        onChange={e => saveSettings({ autoBackupFrequency: e.target.value as AutoBackupFrequency })}
                     >
                         <option value="off">Off</option>
                         <option value="onAppStart">On App Start</option>
@@ -200,17 +209,14 @@ export const SettingsPage: React.FC = () => {
                     <div className="flex flex-wrap gap-3">
                         <button
                             className="px-4 py-2 bg-brand text-white rounded-md hover:bg-brand-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            disabled={!settings.backupFolderPath}
                             onClick={async () => {
-                                const { performBackup } = await import('../../services/backupService');
-                                if (settings.backupFolderPath) {
-                                    const result = await performBackup(settings.backupFolderPath);
-                                    if (result.success) {
-                                        await logAction('Backup Data', 'System', null, `Manual backup to ${result.filePath}`);
-                                        alert(`Backup saved to ${result.filePath}`);
-                                    }
-                                    else alert(`Backup failed: ${result.error}`);
+                                const { performBackup, resolveBackupFolder } = await import('../../services/backupService');
+                                const result = await performBackup(await resolveBackupFolder(settings));
+                                if (result.success) {
+                                    await logAction('Backup Data', 'System', null, `Manual backup to ${result.filePath}`);
+                                    alert(`Backup saved to ${result.filePath}`);
                                 }
+                                else alert(`Backup failed: ${result.error}`);
                             }}
                         >
                             Backup Now
@@ -228,7 +234,7 @@ export const SettingsPage: React.FC = () => {
                                     });
 
                                     if (selected && typeof selected === 'string') {
-                                        if (confirm("WARNING: This will overwrite ALL current data with the backup. Are you sure?")) {
+                                        if (confirm("This will replace ALL current data with the backup. A safety copy of your current data is saved first, and nothing changes if the backup cannot be restored. Continue?")) {
                                             const result = await performRestore(selected);
                                             if (result.success) {
                                                 await logAction('Restore Data', 'System', null, `Restored from ${selected}`);

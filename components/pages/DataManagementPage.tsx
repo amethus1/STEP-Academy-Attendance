@@ -6,8 +6,8 @@ import { toast } from 'sonner';
 import { RolloverModal } from './RolloverModal';
 import { CustomFieldDefinition, AutoBackupFrequency } from '../../types';
 import { TrashIcon } from '../icons/Icons';
-import { getExportData, importData, recalculateAllSchoolYears, closeOldEnrollments } from '../../db/queries';
-import { performBackup, getFrequencyLabel } from '../../services/backupService';
+import { getExportData, importData, recalculateAllSchoolYears, closeOldEnrollments, describeImportFailure } from '../../db/queries';
+import { performBackup, getFrequencyLabel, resolveBackupFolder, AUTO_BACKUP_RETENTION } from '../../services/backupService';
 import { validateImportData, isStandardFormat, ValidationResult } from '../../services/importValidation';
 import { isLegacyFormat, convertLegacyData } from '../../services/legacyImportService';
 
@@ -63,16 +63,11 @@ export const DataManagementPage: React.FC = () => {
   };
 
   const handleBackupNow = async () => {
-    if (!settings.backupFolderPath) {
-      toast.error('Please select a backup folder first');
-      return;
-    }
-
     setIsBackingUp(true);
     try {
-      const result = await performBackup(settings.backupFolderPath);
+      const result = await performBackup(await resolveBackupFolder(settings));
       if (result.success) {
-        toast.success('Backup completed successfully!');
+        toast.success(`Backup saved to ${result.filePath}`);
         // Refresh settings to show updated last backup date
         // Refresh settings/queries
         queryClient.invalidateQueries();
@@ -87,9 +82,9 @@ export const DataManagementPage: React.FC = () => {
   const handleFrequencyChange = (frequency: AutoBackupFrequency) => {
     if (frequency === 'onDataChange') {
       const confirmed = window.confirm(
-        'Warning: "On Data Change" will create a backup every time you save a student or import data. ' +
-        'This can create many backup files quickly and may slow down operations. ' +
-        'Are you sure you want to enable this?'
+        '"On Data Change" saves a backup a minute after you stop making changes, ' +
+        `keeping the newest ${AUTO_BACKUP_RETENTION}. It writes more often than the other options. ` +
+        'Enable it?'
       );
       if (!confirmed) return;
     }
@@ -273,20 +268,14 @@ export const DataManagementPage: React.FC = () => {
       throw new Error("Invalid data structure in JSON file.");
     } catch (error) {
       console.error("Import failed:", error);
-      const errorMessage = String(error);
-
-      // Handle specific error types with helpful messages
-      if (errorMessage.includes('database is locked') || errorMessage.includes('code: 5')) {
-        toast.error("Database is busy after multiple retries. Please close and reopen the app, then try again.");
-      } else if (errorMessage.includes('JSON')) {
-        toast.error("Import failed: Invalid JSON file format.");
-      } else {
-        toast.error(`Import failed: ${errorMessage}`);
-      }
+      toast.error(describeImportFailure(error), { duration: 15000 });
     } finally {
       // Always restore React Query defaults and resume settings saves
       queryClient.setDefaultOptions(defaultQueryOptions);
       resumeSettingsSave();
+      // The cache was cleared before importing; refetch so the screens show the
+      // current data again whether or not the import went through.
+      queryClient.invalidateQueries();
     }
   };
 
@@ -402,7 +391,8 @@ export const DataManagementPage: React.FC = () => {
       queryClient.invalidateQueries();
     } catch (e) {
       console.error("Import failed:", e);
-      toast.error("Import failed: " + String(e));
+      toast.error(describeImportFailure(e), { duration: 15000 });
+      queryClient.invalidateQueries();
     }
   };
 
@@ -657,22 +647,22 @@ export const DataManagementPage: React.FC = () => {
               >
                 Select Folder
               </button>
-              {settings.backupFolderPath && (
-                <button
-                  onClick={handleBackupNow}
-                  disabled={isBackingUp}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-semibold rounded-md"
-                >
-                  {isBackingUp ? 'Backing up...' : 'Backup Now'}
-                </button>
-              )}
+              <button
+                onClick={handleBackupNow}
+                disabled={isBackingUp}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-semibold rounded-md"
+              >
+                {isBackingUp ? 'Backing up...' : 'Backup Now'}
+              </button>
             </div>
             {settings.backupFolderPath ? (
               <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 break-all">
                 📁 {settings.backupFolderPath}
               </p>
             ) : (
-              <p className="mt-2 text-xs text-slate-400 italic">No folder selected</p>
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                Saving to the app&rsquo;s own data folder. Choose a folder that syncs to OneDrive, Google Drive or a network share to keep copies off this computer.
+              </p>
             )}
           </div>
 
@@ -682,7 +672,6 @@ export const DataManagementPage: React.FC = () => {
             <select
               value={settings.autoBackupFrequency || 'off'}
               onChange={(e) => handleFrequencyChange(e.target.value as AutoBackupFrequency)}
-              disabled={!settings.backupFolderPath}
               className="w-full p-2 border rounded-md text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white disabled:opacity-50"
             >
               <option value="off">Off</option>
@@ -693,7 +682,7 @@ export const DataManagementPage: React.FC = () => {
             </select>
             {settings.autoBackupFrequency === 'onDataChange' && (
               <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                ⚠️ Creates backups frequently. May generate many files.
+                Backs up a minute after changes stop. Only the newest {AUTO_BACKUP_RETENTION} automatic backups are kept.
               </p>
             )}
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">

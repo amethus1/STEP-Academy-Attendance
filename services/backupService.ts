@@ -1,16 +1,48 @@
 import { AppSettings, AutoBackupFrequency } from '../types';
-import { getExportData } from '../db/queries';
+import { getExportData, describeImportFailure } from '../db/queries';
 import type { DBStudent, DBEnrollment, DBAttendance, DBHoliday } from '../db/types';
 import { queryClient } from '../lib/react-query';
 import { getDb } from '../db';
 import { getSettings, saveSettings } from './settingsService';
+
+/** Backup files this app writes start with one of these, so pruning never touches anything else. */
+export const AUTO_BACKUP_PREFIX = 'step-academy-backup-';
+export const SAFETY_BACKUP_PREFIX = 'step-academy-before-import-';
+
+/** How many automatic backups to keep in the backup folder. */
+export const AUTO_BACKUP_RETENTION = 30;
+/** How many pre-import safety copies to keep. */
+export const SAFETY_BACKUP_RETENTION = 10;
+
+/**
+ * Where backups go when the user has not chosen a folder. Inside the app's own
+ * data directory, which the app is always allowed to write, so backups work out
+ * of the box instead of silently doing nothing until a folder is configured.
+ */
+export const getDefaultBackupFolder = async (): Promise<string> => {
+    const { appDataDir, join } = await import('@tauri-apps/api/path');
+    return join(await appDataDir(), 'backups');
+};
+
+export const resolveBackupFolder = async (settings: AppSettings): Promise<string> =>
+    settings.backupFolderPath || getDefaultBackupFolder();
+
+/**
+ * Names of backup files to delete so that only the newest `keep` remain.
+ * Filenames embed an ISO timestamp, so lexical order is chronological.
+ */
+export const selectBackupsToPrune = (fileNames: string[], prefix: string, keep: number): string[] => {
+    const ours = fileNames
+        .filter(name => name.startsWith(prefix) && name.endsWith('.json'))
+        .sort();
+    return ours.slice(0, Math.max(0, ours.length - keep));
+};
 
 /**
  * Check if auto-backup should run based on frequency and last backup date
  */
 export const shouldRunAutoBackup = (settings: AppSettings): boolean => {
     if (settings.autoBackupFrequency === 'off') return false;
-    if (!settings.backupFolderPath) return false;
 
     const now = new Date();
     const lastBackup = settings.lastAutoBackupDate ? new Date(settings.lastAutoBackupDate) : null;
@@ -42,31 +74,62 @@ export const shouldRunAutoBackup = (settings: AppSettings): boolean => {
 /**
  * Generate a timestamped backup filename
  */
-export const generateBackupFilename = (): string => {
+export const generateBackupFilename = (prefix: string = AUTO_BACKUP_PREFIX): string => {
     const now = new Date();
     const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    return `step-academy-backup-${timestamp}.json`;
+    return `${prefix}${timestamp}.json`;
+};
+
+export interface BackupResult {
+    success: boolean;
+    filePath?: string;
+    error?: string;
+}
+
+/** Delete our own older backups in `folderPath` beyond the newest `keep`. Best effort. */
+const pruneBackups = async (folderPath: string, prefix: string, keep: number) => {
+    try {
+        const { join } = await import('@tauri-apps/api/path');
+        const { readDir, remove } = await import('@tauri-apps/plugin-fs');
+        const entries = await readDir(folderPath);
+        const names = entries.filter(e => e.isFile).map(e => e.name);
+        for (const name of selectBackupsToPrune(names, prefix, keep)) {
+            await remove(await join(folderPath, name));
+        }
+    } catch (error) {
+        // A failed cleanup must not turn a successful backup into a failure.
+        console.error('Failed to prune old backups:', error);
+    }
 };
 
 /**
- * Perform a backup to the specified folder
- * Returns true if successful, false otherwise
+ * Write a full backup into `folderPath`, creating the folder if needed and
+ * keeping only the newest `keep` files written with the same prefix.
  */
-export const performBackup = async (folderPath: string): Promise<{ success: boolean; filePath?: string; error?: string }> => {
+export const performBackup = async (
+    folderPath: string,
+    options: { prefix?: string; keep?: number; recordAsLastBackup?: boolean } = {}
+): Promise<BackupResult> => {
+    const { prefix = AUTO_BACKUP_PREFIX, keep = AUTO_BACKUP_RETENTION, recordAsLastBackup = true } = options;
     try {
         const { join } = await import('@tauri-apps/api/path');
-        const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+        const { writeTextFile, mkdir, exists } = await import('@tauri-apps/plugin-fs');
+
+        if (!(await exists(folderPath))) {
+            await mkdir(folderPath, { recursive: true });
+        }
 
         const data = await getExportData();
         const content = JSON.stringify(data, null, 2);
-        const filename = generateBackupFilename();
-        const filePath = await join(folderPath, filename);
+        const filePath = await join(folderPath, generateBackupFilename(prefix));
 
         await writeTextFile(filePath, content);
+        await pruneBackups(folderPath, prefix, keep);
 
-        // Update last backup date in settings
-        const currentSettings = await getSettings();
-        await saveSettings({ ...currentSettings, lastAutoBackupDate: new Date().toISOString() });
+        if (recordAsLastBackup) {
+            const currentSettings = await getSettings();
+            await saveSettings({ ...currentSettings, lastAutoBackupDate: new Date().toISOString() });
+        }
 
         return { success: true, filePath };
     } catch (error) {
@@ -76,47 +139,56 @@ export const performBackup = async (folderPath: string): Promise<{ success: bool
 };
 
 /**
- * Run auto-backup if needed based on settings
- * Should be called on app startup
+ * Copy the current data aside before it is replaced by an import or restore.
+ * Throws if the copy cannot be written: replacing the data without one would
+ * leave no way back if the imported file turns out to be the wrong one.
  */
-export const runAutoBackupIfNeeded = async (): Promise<void> => {
-    const settings = await getSettings();
-
-    if (!shouldRunAutoBackup(settings)) {
-        return;
+export const writeSafetyBackup = async (): Promise<string> => {
+    const { join } = await import('@tauri-apps/api/path');
+    const folder = await join(await getDefaultBackupFolder(), 'before-import');
+    const result = await performBackup(folder, {
+        prefix: SAFETY_BACKUP_PREFIX,
+        keep: SAFETY_BACKUP_RETENTION,
+        recordAsLastBackup: false
+    });
+    if (!result.success || !result.filePath) {
+        throw new Error(
+            `Could not save a safety copy of your current data before importing, so nothing was changed. ${result.error ?? ''}`.trim()
+        );
     }
-
-    if (!settings.backupFolderPath) {
-        console.log('Auto-backup: No backup folder configured');
-        return;
-    }
-
-    console.log('Running auto-backup...');
-    const result = await performBackup(settings.backupFolderPath);
-
-    if (result.success) {
-        console.log('Auto-backup completed:', result.filePath);
-    } else {
-        console.error('Auto-backup failed:', result.error);
-    }
+    return result.filePath;
 };
 
 /**
- * Run backup after data change (for 'onDataChange' frequency)
+ * Run auto-backup if needed based on settings. Called on app startup; the
+ * caller decides how to tell the user about a failure.
  */
-export const runBackupOnDataChange = async (): Promise<void> => {
+export const runAutoBackupIfNeeded = async (): Promise<BackupResult | null> => {
     const settings = await getSettings();
+    if (!shouldRunAutoBackup(settings)) return null;
 
-    if (settings.autoBackupFrequency !== 'onDataChange') {
-        return;
-    }
+    return performBackup(await resolveBackupFolder(settings));
+};
 
-    if (!settings.backupFolderPath) {
-        return;
-    }
+// After a burst of edits (a whole class marked in a minute), take one backup
+// once things go quiet rather than one per click.
+const DATA_CHANGE_BACKUP_DELAY_MS = 60 * 1000;
+let dataChangeTimer: ReturnType<typeof setTimeout> | null = null;
 
-    console.log('Running backup after data change...');
-    await performBackup(settings.backupFolderPath);
+/**
+ * Schedule a backup after data changes, for the 'onDataChange' frequency.
+ * Call after every successful write; repeated calls collapse into one backup.
+ */
+export const runBackupOnDataChange = (onFailure?: (error: string) => void): void => {
+    if (dataChangeTimer) clearTimeout(dataChangeTimer);
+    dataChangeTimer = setTimeout(async () => {
+        dataChangeTimer = null;
+        const settings = await getSettings();
+        if (settings.autoBackupFrequency !== 'onDataChange') return;
+
+        const result = await performBackup(await resolveBackupFolder(settings));
+        if (!result.success) onFailure?.(result.error ?? 'Unknown error');
+    }, DATA_CHANGE_BACKUP_DELAY_MS);
 };
 
 /**
@@ -299,7 +371,7 @@ export const performRestore = async (filePath: string): Promise<{ success: boole
         throw new Error("Restore failed after retries");
     } catch (error) {
         console.error('Restore failed:', error);
-        return { success: false, error: String(error) };
+        return { success: false, error: describeImportFailure(error) };
     }
 };
 

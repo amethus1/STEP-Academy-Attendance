@@ -25,8 +25,10 @@ export const defaultSettings: AppSettings = {
   activeSchoolYear: '', // Empty means auto-detect based on current date
   customFieldDefinitions: [],
   // Backup settings
+  // No folder needed: backups go to the app's own data folder until one is chosen.
   backupFolderPath: null,
-  autoBackupFrequency: 'off',
+  // On by default so a new install is protected before anyone finds the setting.
+  autoBackupFrequency: 'daily',
   lastAutoBackupDate: null,
   rosterFilters: {
     status: 'All',

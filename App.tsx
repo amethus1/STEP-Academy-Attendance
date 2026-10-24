@@ -59,13 +59,16 @@ const App: React.FC = () => {
     root.classList.toggle('dark', isDark);
   }, [settings.theme]);
 
-  // Auto-backup on app start
+  // Auto-backup on app start. A failure used to go only to the developer
+  // console, so a school could run for months believing it had backups.
   useEffect(() => {
     runAutoBackupIfNeeded().then((result) => {
-      // Only show toast if backup was actually performed
-      // The service returns void but logs success/failure
+      if (result && !result.success) {
+        toast.error(`Automatic backup failed: ${result.error}. Check the backup folder in Settings.`, { duration: 15000 });
+      }
     }).catch((err) => {
       console.error('Auto-backup check failed:', err);
+      toast.error('Automatic backup could not run. Check the backup folder in Settings.', { duration: 15000 });
     });
   }, []); // Run once on mount
 
