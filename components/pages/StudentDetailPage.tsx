@@ -3,12 +3,12 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
-import { useStudentDetails, useUpdateStudent, useUpdateEnrollment, useCreateStudent, useStudentEnrollments } from '../../hooks/useStudents';
+import { useStudentDetails, useUpdateStudent, useUpdateEnrollment, useCreateStudent } from '../../hooks/useStudents';
 import { StudentProgressReport } from '../reports/StudentProgressReport';
 import { useSchoolYears } from '../../hooks/useSchoolYears';
 import { useSettings } from '../../hooks/useSettings';
 import { useHolidays, useStudentAttendanceWithComments } from '../../hooks/useAttendance';
-import { Student, StudentStatus, CustomFieldDefinition } from '../../types';
+import { Student, StudentStatus } from '../../types';
 import { toISODateString, formatDateForDisplay, getSchoolYearFromDate } from '../../services/dateUtils';
 import { calculateDaysRemaining, calculateProjectedReleaseDate } from '../../services/studentLogic';
 import { mapDBHolidaysToHolidays, mapEnrollmentToUI, EnrollmentUI, mapUIStudentToDB } from '../../services/mappers';
@@ -130,7 +130,7 @@ export const StudentDetailPage: React.FC = () => {
   const customFieldDefinitions = settings.customFieldDefinitions || [];
 
   // Logic to determine "Active" View
-  const { activeEnrollment, uiStudent, relatedEnrollments, studentAttendance } = useMemo(() => {
+  const { activeEnrollment, uiStudent, studentAttendance } = useMemo(() => {
     if (!studentDetails) return { activeEnrollment: null, uiStudent: null, relatedEnrollments: [], studentAttendance: [] };
 
     const { student: profile, enrollments, attendance } = studentDetails;

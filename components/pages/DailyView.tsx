@@ -1,12 +1,10 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { toast } from 'sonner';
 import { useStudents } from '../../hooks/useStudents';
 import { useAttendance, useAttendanceRange, useHolidays, useSaveAttendanceComment } from '../../hooks/useAttendance';
 import { useAttendanceMarking } from '../../hooks/useAttendanceMarking';
 import { useKeyboardEntry } from '../../hooks/useKeyboardEntry';
 import { useActiveSchoolYear } from '../../hooks/useActiveSchoolYear';
-import { useSettings } from '../../hooks/useSettings';
 import { StudentStatus, Presence } from '../../types';
 import { toISODateString, formatDateForDisplay } from '../../services/dateUtils';
 import { ExtendedStudent, mapDBStudentToUI, mapDBHolidaysToHolidays } from '../../services/mappers';
@@ -28,7 +26,6 @@ const Key: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 );
 
 export const DailyView: React.FC = () => {
-  const { settings } = useSettings();
   const [searchParams] = useSearchParams();
   // Other views link here with ?date=YYYY-MM-DD to open a specific day.
   const [selectedDate, setSelectedDate] = useState(() => {
@@ -111,8 +108,6 @@ export const DailyView: React.FC = () => {
     [studentsInYear, recentAttendance, holidayDates, selectedDate]
   );
 
-  // State for editing comments
-  const [editingComment, setEditingComment] = useState<{ studentId: string; value: string } | null>(null);
 
   // Additional Filter State for Attendance
   const [attendanceFilter, setAttendanceFilter] = useState<AttendanceFilterType>('All');
@@ -300,15 +295,12 @@ export const DailyView: React.FC = () => {
             type="text"
             placeholder="Add note..."
             defaultValue={commentsByStudent[s.id] || ''}
-            onFocus={(e) => setEditingComment({ studentId: s.id, value: e.target.value })}
-            onChange={(e) => setEditingComment({ studentId: s.id, value: e.target.value })}
             onBlur={(e) => {
               const newComment = e.target.value.trim();
               const oldComment = commentsByStudent[s.id] || '';
               if (newComment !== oldComment) {
                 saveComment({ studentId: s.id, date: selectedDate, comment: newComment || null });
               }
-              setEditingComment(null);
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') e.currentTarget.blur();

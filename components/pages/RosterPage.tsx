@@ -1,5 +1,5 @@
 import { Dialog } from '../common/Dialog';
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useUniqueStudents, useCreateStudent } from '../../hooks/useStudents';
 import { useSchoolYears } from '../../hooks/useSchoolYears';
@@ -202,11 +202,14 @@ export const RosterPage: React.FC = () => {
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
 
-  // TODO: Fetch customFieldDefinitions from DB if dynamic, or keep them static/settings for now.
-  const customFieldDefinitions: CustomFieldDefinition[] = [
-    { id: 'homeroom', name: 'Homeroom', type: 'text' },
-    { id: 'track', name: 'Track', type: 'text' }
-  ];
+  // The custom fields configured in Settings, as Dashboard and Student Detail
+  // use. This was a hardcoded Homeroom/Track list, so configured fields never
+  // appeared here and values entered from the roster went to unused IDs.
+  // Memoised so the hooks that depend on it do not re-run on every render.
+  const customFieldDefinitions = useMemo<CustomFieldDefinition[]>(
+    () => settings.customFieldDefinitions || [],
+    [settings.customFieldDefinitions]
+  );
 
   const { rosterColumnOrder } = settings;
   const rosterVisibleColumns = useMemo(() => (

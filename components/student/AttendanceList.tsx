@@ -1,7 +1,6 @@
 import React from 'react';
 import { formatDateForDisplay } from '../../services/dateUtils';
 import { DBAttendance } from '../../db/types';
-import { Presence } from '../../types';
 
 // Update Props interface
 interface AttendanceListProps {

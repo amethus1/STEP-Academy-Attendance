@@ -1,5 +1,3 @@
-import { AttendanceRecord } from '../types';
-
 interface HasDate {
     date: string;
 }

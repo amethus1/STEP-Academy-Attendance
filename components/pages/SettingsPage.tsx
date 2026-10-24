@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useSettings } from '../../hooks/useSettings';
 import { useSchoolYears } from '../../hooks/useSchoolYears';
 import { Theme, DateFormat, AutoBackupFrequency } from '../../types';
-import { SunIcon, MoonIcon, AcademicCapIcon, FolderIcon } from '../icons/Icons';
+import { AcademicCapIcon, FolderIcon } from '../icons/Icons';
 import { ImportWizard } from '../common/ImportWizard';
 import { useLogAction } from '../../hooks/useAuditLogs';
 
@@ -264,7 +264,7 @@ export const SettingsPage: React.FC = () => {
                             className="px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-brand hover:underline"
                             onClick={() => {
                                 // Simple CSV Export
-                                import('../../services/csvService').then(async ({ exportToCsv }) => {
+                                import('../../services/csvService').then(async () => {
                                     const { getExportData } = await import('../../db/queries');
                                     const data = await getExportData();
                                     // Flatten data for CSV? Or export JSON?

@@ -1,5 +1,5 @@
 import { Dialog } from '../common/Dialog';
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { defaultQueryOptions } from '../../lib/react-query';
 import { useSettings } from '../../hooks/useSettings';
@@ -8,7 +8,7 @@ import { RolloverModal } from './RolloverModal';
 import { CustomFieldDefinition, AutoBackupFrequency } from '../../types';
 import { TrashIcon } from '../icons/Icons';
 import { getExportData, importData, recalculateAllSchoolYears, closeOldEnrollments, describeImportFailure } from '../../db/queries';
-import { performBackup, getFrequencyLabel, resolveBackupFolder, AUTO_BACKUP_RETENTION } from '../../services/backupService';
+import { performBackup, resolveBackupFolder, AUTO_BACKUP_RETENTION } from '../../services/backupService';
 import { validateImportData, isStandardFormat, ValidationResult } from '../../services/importValidation';
 import { isLegacyFormat, convertLegacyData } from '../../services/legacyImportService';
 
@@ -23,7 +23,6 @@ export const DataManagementPage: React.FC = () => {
   const [newFieldType, setNewFieldType] = useState<'text' | 'number' | 'date'>('text');
   const [error, setError] = useState('');
   const [isRolloverModalOpen, setIsRolloverModalOpen] = useState(false);
-  const [currentLocation, setCurrentLocation] = useState<string>('Loading...');
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRecalculating, setIsRecalculating] = useState(false);
   const [showRecalculateConfirm, setShowRecalculateConfirm] = useState(false);
@@ -34,15 +33,6 @@ export const DataManagementPage: React.FC = () => {
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [pendingImportData, setPendingImportData] = useState<any>(null);
   const [showValidationModal, setShowValidationModal] = useState(false);
-
-  useEffect(() => {
-    // SQLite managed internally
-    setCurrentLocation('Internal Direct SQL Database');
-  }, []);
-
-  const handleChangeLocation = async () => {
-    toast.info("Changing storage location is not supported in the new database architecture.");
-  };
 
   const handleSelectBackupFolder = async () => {
     try {

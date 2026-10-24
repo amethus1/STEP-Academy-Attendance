@@ -11,7 +11,6 @@ export const generateMockData = (): AppData => {
 
   const today = new Date();
   const currentYear = today.getMonth() >= 7 ? today.getFullYear() : today.getFullYear() - 1;
-  const schoolYearStart = `${currentYear}-08-15`;
   const registrationDate = `${currentYear}-08-10`;
   const entryDate = `${currentYear}-08-19`;
 

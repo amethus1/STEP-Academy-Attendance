@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useAuditLogs, useDistinctAuditActions, useDistinctAuditEntityTypes } from '../../hooks/useAuditLogs';
-import { formatDateForDisplay } from '../../services/dateUtils';
 import { PageLoadingSkeleton } from '../common/SkeletonLoader';
 import { ChevronLeftIcon, ChevronRightIcon } from '../icons/Icons';
 

@@ -1,10 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-    getStudentsByYear,
     createStudent,
     updateStudentEnrollment,
-    getSchoolYears,
     getStudentDetails,
     updateStudent,
     deleteStudent,
@@ -13,7 +11,6 @@ import {
     getStudentEnrollments,
     DBStudent,
     DBEnrollment,
-    StudentWithEnrollment,
     StudentSearchOptions,
     UniqueStudentSearchOptions
 } from '../db/queries';

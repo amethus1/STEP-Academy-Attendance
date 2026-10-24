@@ -67,19 +67,6 @@ export function DataTable<T>({
         if (onSort) onSort(colId);
     };
 
-    const startIndex = (currentPage - 1) * pageSize;
-    const endIndex = startIndex + data.length; // Approximate for display text
-    // Note: data passing into this table is usually usually already paginated (pageData) 
-    // OR full data that we slice here? 
-    // Let's assume the parent passes *displayed* data (paginated) OR full data if they don't use server-side.
-    // Actually, to make it generic, let's assume `data` contains only the items to show on the current page.
-    // The counting labels (Showing X-Y of Z) need a totalCount prop if we want to be accurate for server-side.
-    // Let's stick to the current RosterPage pattern: Client-side pagination logic is in component, 
-    // but let's allow `data` to be the "paginated slice".
-    // Wait, RosterPage currently slices it: `paginatedStudents = sortedAndFilteredStudents.slice(...)`.
-
-    // So `data` prop is the slice. We need totalItems to display "Showing ... of X".
-
     return (
         <div className="space-y-4">
             <div className="bg-white dark:bg-slate-900 rounded-lg shadow-sm overflow-x-auto max-h-[70vh]">

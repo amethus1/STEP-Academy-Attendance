@@ -16,7 +16,6 @@ type Step = 'upload' | 'preview' | 'importing' | 'complete';
 export const ImportWizard: React.FC<ImportWizardProps> = ({ isOpen, onClose, onSuccess }) => {
     const activeSchoolYear = useActiveSchoolYear();
     const [step, setStep] = useState<Step>('upload');
-    const [file, setFile] = useState<File | null>(null);
     const [importResult, setImportResult] = useState<ImportResult | null>(null);
     const [progress, setProgress] = useState(0);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -33,7 +32,6 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ isOpen, onClose, onS
             return;
         }
 
-        setFile(selectedFile);
 
         // Parse & Validate
         const text = await selectedFile.text();
@@ -66,7 +64,6 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ isOpen, onClose, onS
 
     const handleReset = () => {
         setStep('upload');
-        setFile(null);
         setImportResult(null);
         setProgress(0);
         if (fileInputRef.current) fileInputRef.current.value = '';

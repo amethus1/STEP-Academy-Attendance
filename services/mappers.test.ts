@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
     mapDBStudentToUI,
     mapDBHolidayToHoliday,
@@ -7,14 +7,13 @@ import {
     mapEnrollmentToUI
 } from './mappers';
 import { StudentWithEnrollment, DBHoliday, UniqueStudentRow, DBEnrollment } from '../db/queries';
-import { StudentStatus } from '../types';
 
 // Mock date to ensure consistent test results
 vi.mock('./dateUtils', async () => {
     const actual = await vi.importActual('./dateUtils');
     return {
         ...actual,
-        toISODateString: (date: Date) => '2024-01-15'
+        toISODateString: (_date: Date) => '2024-01-15'
     };
 });
 

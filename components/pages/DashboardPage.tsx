@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useStudents, useCreateStudent } from '../../hooks/useStudents';
-import { useAttendanceRange, useHolidays } from '../../hooks/useAttendance';
+import { useAttendanceRange } from '../../hooks/useAttendance';
 // import { useSchoolYears } from '../../hooks/useSchoolYears'; // Removed as unused
 import { useSettings } from '../../hooks/useSettings';
-import { StudentStatus, Presence, Student } from '../../types';
+import { StudentStatus, Student } from '../../types';
 import { toISODateString } from '../../services/dateUtils';
 import { groupAttendanceByDate, groupAttendanceByStudent } from '../../services/attendanceUtils';
 import { mapUIStudentToDB } from '../../services/mappers';

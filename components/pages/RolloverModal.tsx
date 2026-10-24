@@ -1,7 +1,7 @@
 import { Dialog } from '../common/Dialog';
 import React, { useState, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Student, StudentStatus } from '../../types';
+import { StudentStatus } from '../../types';
 import { useSettings } from '../../hooks/useSettings';
 import { useStudents, useCreateStudent } from '../../hooks/useStudents';
 import { useSchoolYears } from '../../hooks/useSchoolYears';
@@ -142,7 +142,9 @@ export const RolloverModal: React.FC<RolloverModalProps> = ({ isOpen, onClose })
             // 1. Prepare data
             const studentsToProcess = studentStates.filter(s => s.action !== 'exit');
             const studentsToExit = studentStates.filter(s => s.action === 'exit');
-            const targetSchoolYear = getSchoolYearFromDate(new Date(newStartDate));
+            // Match against the configured school years, as everywhere else, and
+            // parse at noon so a US time zone cannot shift the date to the day before.
+            const targetSchoolYear = getSchoolYearFromDate(new Date(newStartDate + 'T12:00:00Z'), schoolYears);
 
             // Calculate exit date as the day before the new year starts
             const exitDate = new Date(newStartDate);
