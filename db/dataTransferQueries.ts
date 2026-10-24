@@ -48,7 +48,7 @@ export const getExportData = async () => {
  * rejected.
  */
 export const importData = async (data: ImportPayload) => {
-    const { acquireWriteLock, getDb } = await import('./index');
+    const { acquireWriteLock, getDb, resetConnections } = await import('./index');
     const { writeSafetyBackup } = await import('../services/backupService');
 
     const releaseLock = await acquireWriteLock();
@@ -77,7 +77,7 @@ export const importData = async (data: ImportPayload) => {
             `Replacing existing data: ${before.students} students, ${before.enrollments} enrollments, ${before.attendance} attendance records, ${before.holidays} holidays, ${before.schoolYears} school years. Safety copy: ${safetyCopy}`
         );
 
-        await runAtomicImport(db, data);
+        await runAtomicImport(db, data, resetConnections);
 
         await createAuditLog('Import Data', 'System', null, `Imported ${data.students.length} students, ${data.attendance.length} attendance records`);
     } finally {

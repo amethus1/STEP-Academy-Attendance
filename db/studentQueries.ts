@@ -291,35 +291,34 @@ export const getStudentDetails = async (studentId: string) => {
     return { student, enrollments, attendance };
 };
 
+/**
+ * Create a student's enrollment, creating or updating their profile with it.
+ * One transaction: previously a failure on the enrollment insert left a
+ * profile with no enrollment, which the roster (built from enrollments) never
+ * shows.
+ */
 export const createStudent = async (student: DBStudent, enrollment: DBEnrollment): Promise<void> => {
-    const { acquireWriteLock, getDb } = await import('./index');
-    const releaseLock = await acquireWriteLock();
-
-    try {
-        const db = await getDb();
-        const exists = await db.select<DBStudent[]>("SELECT id FROM students WHERE id = $1", [student.id]);
-
-        if (exists.length === 0) {
-            await db.execute(
-                `INSERT INTO students (id, student_number, first_name, last_name, dob, gender, guardian_name, guardian_phone, guardian_email, emergency_contact_name, emergency_contact_phone, photo_url, custom_fields)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-                [student.id, student.student_number, student.first_name, student.last_name, student.dob, student.gender, student.guardian_name, student.guardian_phone, student.guardian_email, student.emergency_contact_name, student.emergency_contact_phone, student.photo_url, student.custom_fields]
-            );
-        } else {
-            await db.execute(
-                `UPDATE students SET student_number=$2, first_name=$3, last_name=$4, dob=$5, gender=$6, guardian_name=$7, guardian_phone=$8, guardian_email=$9, emergency_contact_name=$10, emergency_contact_phone=$11, photo_url=$12, custom_fields=$13 WHERE id=$1`,
-                [student.id, student.student_number, student.first_name, student.last_name, student.dob, student.gender, student.guardian_name, student.guardian_phone, student.guardian_email, student.emergency_contact_name, student.emergency_contact_phone, student.photo_url, student.custom_fields]
-            );
+    await withTransaction([
+        {
+            // ON CONFLICT DO UPDATE, never INSERT OR REPLACE: REPLACE deletes the
+            // existing row first, and ON DELETE CASCADE would take the student's
+            // enrollments and attendance with it.
+            sql: `INSERT INTO students (id, student_number, first_name, last_name, dob, gender, guardian_name, guardian_phone, guardian_email, emergency_contact_name, emergency_contact_phone, photo_url, custom_fields)
+                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                  ON CONFLICT(id) DO UPDATE SET
+                    student_number = excluded.student_number, first_name = excluded.first_name, last_name = excluded.last_name,
+                    dob = excluded.dob, gender = excluded.gender, guardian_name = excluded.guardian_name,
+                    guardian_phone = excluded.guardian_phone, guardian_email = excluded.guardian_email,
+                    emergency_contact_name = excluded.emergency_contact_name, emergency_contact_phone = excluded.emergency_contact_phone,
+                    photo_url = excluded.photo_url, custom_fields = excluded.custom_fields`,
+            params: [student.id, student.student_number, student.first_name, student.last_name, student.dob, student.gender, student.guardian_name, student.guardian_phone, student.guardian_email, student.emergency_contact_name, student.emergency_contact_phone, student.photo_url, student.custom_fields]
+        },
+        {
+            sql: `INSERT INTO enrollments (id, student_id, school_year, start_date, end_date, grade_level, campus, status, sped_504, drg_offense, days_assigned, credit_days, comments)
+                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+            params: [enrollment.id, enrollment.student_id, enrollment.school_year, enrollment.start_date, enrollment.end_date, enrollment.grade_level, enrollment.campus, enrollment.status, enrollment.sped_504, enrollment.drg_offense, enrollment.days_assigned, enrollment.credit_days, enrollment.comments]
         }
-
-        await db.execute(
-            `INSERT INTO enrollments (id, student_id, school_year, start_date, end_date, grade_level, campus, status, sped_504, drg_offense, days_assigned, credit_days, comments)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-            [enrollment.id, enrollment.student_id, enrollment.school_year, enrollment.start_date, enrollment.end_date, enrollment.grade_level, enrollment.campus, enrollment.status, enrollment.sped_504, enrollment.drg_offense, enrollment.days_assigned, enrollment.credit_days, enrollment.comments]
-        );
-    } finally {
-        releaseLock();
-    }
+    ]);
 
     await createAuditLog('CREATE_STUDENT', 'Student', student.id, `Created ${student.first_name} ${student.last_name}`);
 };
@@ -334,17 +333,13 @@ export const updateStudent = async (student: DBStudent): Promise<void> => {
 };
 
 export const deleteStudent = async (studentId: string): Promise<void> => {
-    const { acquireWriteLock, getDb } = await import('./index');
-    const releaseLock = await acquireWriteLock();
-
-    try {
-        const db = await getDb();
-        await db.execute("DELETE FROM attendance WHERE student_id = $1", [studentId]);
-        await db.execute("DELETE FROM enrollments WHERE student_id = $1", [studentId]);
-        await db.execute("DELETE FROM students WHERE id = $1", [studentId]);
-    } finally {
-        releaseLock();
-    }
+    // ON DELETE CASCADE covers the child rows on migrated databases; deleting
+    // them explicitly, in the same transaction, keeps this correct regardless.
+    await withTransaction([
+        { sql: 'DELETE FROM attendance WHERE student_id = $1', params: [studentId] },
+        { sql: 'DELETE FROM enrollments WHERE student_id = $1', params: [studentId] },
+        { sql: 'DELETE FROM students WHERE id = $1', params: [studentId] }
+    ]);
 
     await createAuditLog('DELETE_STUDENT', 'Student', studentId, 'Deleted student and related records');
 };

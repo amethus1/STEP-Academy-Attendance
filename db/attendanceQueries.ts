@@ -1,5 +1,5 @@
 // Attendance-related database queries
-import { getDb } from './index';
+import { getDb, withTransaction, type Statement } from './index';
 import { DBAttendance } from './types';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -19,11 +19,12 @@ export const getAttendanceByDateRange = async (startDate: string, endDate: strin
 export const saveAttendance = async (records: DBAttendance[]) => {
     if (records.length === 0) return;
 
-    const db = await getDb();
-
     // Batch upsert using SQLite's multi-row INSERT
     // Split into chunks to avoid SQLite's parameter limit (typically 999)
     const BATCH_SIZE = 150; // Each record has 6 params, so 150 * 6 = 900 params per batch
+
+    // All batches commit together, so a large save cannot be left half-applied.
+    const statements: Statement[] = [];
 
     for (let i = 0; i < records.length; i += BATCH_SIZE) {
         const batch = records.slice(i, i + BATCH_SIZE);
@@ -50,8 +51,10 @@ export const saveAttendance = async (records: DBAttendance[]) => {
                 comment = COALESCE(excluded.comment, attendance.comment)
         `;
 
-        await db.execute(query, params);
+        statements.push({ sql: query, params });
     }
+
+    await withTransaction(statements);
 };
 
 export const deleteAttendance = async (studentId: string, date: string) => {

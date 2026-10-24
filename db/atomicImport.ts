@@ -253,7 +253,12 @@ export const buildSwapSql = (opts: { replaceHolidays: boolean; replaceSchoolYear
 };
 
 /** Stage, check, and swap. Throws ImportValidationError when the file is rejected. */
-export const runAtomicImport = async (db: SqlExecutor, payload: ImportPayload): Promise<void> => {
+export const runAtomicImport = async (
+    db: SqlExecutor,
+    payload: ImportPayload,
+    /** Closes the pool; used if the swap fails in a way that may leave its transaction open. */
+    discardConnections?: () => Promise<void>
+): Promise<void> => {
     if (!Array.isArray(payload.students) || payload.students.length === 0) {
         // Importing an empty file would erase every student.
         throw new ImportValidationError([{ message: 'The file contains no students', count: 0 }]);
@@ -273,9 +278,11 @@ export const runAtomicImport = async (db: SqlExecutor, payload: ImportPayload): 
             }));
         } catch (error) {
             // Every anticipated failure has already rolled itself back. For
-            // anything else (disk full, I/O), make a best effort; on a different
-            // pooled connection this simply reports that no transaction is open.
-            await db.execute('ROLLBACK').catch(() => undefined);
+            // anything else (disk full, I/O) the transaction may still be open on
+            // the connection that ran the swap; closing the pool rolls it back.
+            if (discardConnections) {
+                await discardConnections().catch(err => console.error('Failed to reset connections after import:', err));
+            }
             throw error;
         }
     } finally {

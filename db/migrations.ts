@@ -233,8 +233,8 @@ export interface MigrationDb {
  * Split a migration's SQL into individual statements.
  *
  * `PRAGMA foreign_keys` is stripped deliberately: the pragma is a silent no-op
- * inside a transaction, and the runner owns foreign-key state for the whole
- * migration run (see runMigrations).
+ * inside a transaction, and buildMigrationScript sets it around the
+ * transaction instead.
  */
 export const splitStatements = (sql: string): string[] =>
     sql
@@ -243,8 +243,58 @@ export const splitStatements = (sql: string): string[] =>
         .filter(s => s.length > 0)
         .filter(s => !/^PRAGMA\s+foreign_keys/i.test(s));
 
+const sqlString = (value: string) => `'${value.replace(/'/g, "''")}'`;
+
+/**
+ * One migration as a single script, so it runs on one pooled connection.
+ *
+ * The plugin sends each execute call to any free connection in its pool, so
+ * BEGIN, the statements and COMMIT sent separately were not guaranteed to form
+ * one transaction. As one script:
+ *
+ *  - foreign keys are switched off before BEGIN and back on after COMMIT, on
+ *    the same connection as the migration (table rebuilds need them off, and
+ *    the pragma cannot change inside a transaction);
+ *  - a trigger raises ROLLBACK if the migration left broken references, which
+ *    ends the transaction cleanly instead of committing bad data;
+ *  - the schema_migrations row commits together with the migration, or not at all.
+ *
+ * Values are inlined rather than bound so the script is self-contained; they
+ * come from the MIGRATIONS list, not from user input.
+ */
+export const buildMigrationScript = (migration: Migration, appliedAt: string): string => {
+    const guard = '_migration_guard';
+    return [
+        'PRAGMA foreign_keys = OFF',
+        'BEGIN',
+        ...splitStatements(migration.sql),
+        `CREATE TEMP TABLE ${guard} (x INTEGER)`,
+        `CREATE TEMP TRIGGER ${guard}_check BEFORE INSERT ON ${guard}
+         WHEN EXISTS (SELECT 1 FROM pragma_foreign_key_check)
+         BEGIN
+             SELECT RAISE(ROLLBACK, ${sqlString(`Migration ${migration.version} left records pointing at missing rows`)});
+         END`,
+        `INSERT INTO ${guard} VALUES (1)`,
+        `DROP TABLE ${guard}`,
+        `INSERT INTO schema_migrations (version, name, applied_at) VALUES (${Number(migration.version)}, ${sqlString(migration.name)}, ${sqlString(appliedAt)})`,
+        'COMMIT',
+        'PRAGMA foreign_keys = ON'
+        // Separators on their own line, so a statement ending in a -- comment
+        // cannot swallow the ';' that follows it.
+    ].join('\n;\n') + '\n;';
+};
+
+/**
+ * Apply pending migrations, each atomically.
+ *
+ * If one fails, the caller must discard the connection pool (getDb closes it):
+ * the failed script may have left its transaction open, and foreign keys off,
+ * on the connection that ran it, and closing that connection rolls it back.
+ * Without atomic migrations, an interrupted multi-statement migration left
+ * half-built tables behind and every later launch failed on "table X already
+ * exists".
+ */
 export const runMigrations = async (db: MigrationDb) => {
-    // 1. Create migrations table
     await db.execute(`
         CREATE TABLE IF NOT EXISTS schema_migrations (
             version INTEGER PRIMARY KEY,
@@ -253,62 +303,18 @@ export const runMigrations = async (db: MigrationDb) => {
         );
     `);
 
-    // 2. Get current version
     const result = await db.select<{ version: number }[]>("SELECT MAX(version) as version FROM schema_migrations");
     const currentVersion = result[0]?.version || 0;
 
     console.log(`Current DB Version: ${currentVersion}`);
 
-    const pending = MIGRATIONS.filter(m => m.version > currentVersion);
-    if (pending.length === 0) return;
-
-    // Foreign keys must be disabled OUTSIDE a transaction for the table-rebuild
-    // pattern (create new -> copy -> drop old -> rename) that migrations use to
-    // change constraints. SQLite ignores this pragma inside a transaction.
-    await db.execute("PRAGMA foreign_keys = OFF");
-
-    try {
-        // 3. Apply pending migrations, each atomically.
-        //
-        // Every migration runs inside its own transaction together with the
-        // schema_migrations bookkeeping row, so a crash or error mid-migration
-        // rolls back completely. Without this, an interrupted multi-statement
-        // migration leaves half-built tables behind and every subsequent launch
-        // fails on "table X already exists" — an unrecoverable state for the user.
-        for (const migration of pending) {
-            console.log(`Applying migration ${migration.version}: ${migration.name}`);
-
-            await db.execute("BEGIN");
-            try {
-                for (const stmt of splitStatements(migration.sql)) {
-                    await db.execute(stmt);
-                }
-
-                // Reject the migration if it left dangling references behind.
-                const violations = await db.select<unknown[]>("PRAGMA foreign_key_check");
-                if (Array.isArray(violations) && violations.length > 0) {
-                    throw new Error(
-                        `Migration ${migration.version} produced ${violations.length} foreign key violation(s)`
-                    );
-                }
-
-                await db.execute(
-                    "INSERT INTO schema_migrations (version, name, applied_at) VALUES ($1, $2, $3)",
-                    [migration.version, migration.name, new Date().toISOString()]
-                );
-                await db.execute("COMMIT");
-            } catch (e) {
-                try {
-                    await db.execute("ROLLBACK");
-                } catch (rollbackErr) {
-                    console.error("Migration rollback failed:", rollbackErr);
-                }
-                console.error(`Migration ${migration.version} failed:`, e);
-                throw e; // Stop migration process
-            }
+    for (const migration of MIGRATIONS.filter(m => m.version > currentVersion)) {
+        console.log(`Applying migration ${migration.version}: ${migration.name}`);
+        try {
+            await db.execute(buildMigrationScript(migration, new Date().toISOString()));
+        } catch (e) {
+            console.error(`Migration ${migration.version} failed:`, e);
+            throw e; // Stop migration process
         }
-    } finally {
-        // Restore enforcement regardless of outcome.
-        await db.execute("PRAGMA foreign_keys = ON");
     }
 };

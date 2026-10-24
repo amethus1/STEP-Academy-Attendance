@@ -1,5 +1,8 @@
 import Database from '@tauri-apps/plugin-sql';
 import { runMigrations } from './migrations';
+import { runInTransaction, type Statement } from './transaction';
+
+export type { Statement } from './transaction';
 
 let dbInstance: Database | null = null;
 
@@ -38,6 +41,8 @@ export const isWriteLocked = (): boolean => {
 // Initialization lock to prevent concurrent getDb() calls from racing
 let initPromise: Promise<Database> | null = null;
 
+const DB_URL = 'sqlite:step_academy.db';
+
 export const getDb = async (): Promise<Database> => {
     // Return existing instance if available
     if (dbInstance) return dbInstance;
@@ -47,14 +52,15 @@ export const getDb = async (): Promise<Database> => {
 
     // Start initialization and store the promise so concurrent calls wait
     initPromise = (async () => {
+        let db: Database | null = null;
         try {
-            const db = await Database.load('sqlite:step_academy.db');
+            db = await Database.load(DB_URL);
 
-            // Enable WAL mode for better concurrent access
+            // WAL is stored in the database file, so setting it once covers every
+            // pooled connection. Per-connection settings such as foreign_keys and
+            // busy_timeout come from sqlx, which enables foreign keys on every
+            // connection it opens.
             await db.execute("PRAGMA journal_mode = WAL");
-            await db.execute("PRAGMA busy_timeout = 30000");
-            // Enable foreign key enforcement for data integrity
-            await db.execute("PRAGMA foreign_keys = ON");
 
             await runMigrations(db);
 
@@ -62,6 +68,10 @@ export const getDb = async (): Promise<Database> => {
             dbInstance = db;
             return db;
         } catch (error) {
+            // A migration that fails partway can leave its transaction open, and
+            // foreign keys switched off, on the connection that ran it. Closing
+            // the pool rolls that back before anything else can use it.
+            if (db) await db.close().catch(err => console.error('Failed to close database after error:', err));
             // Clear initPromise so next call can retry
             initPromise = null;
             console.error("Failed to load database:", error);
@@ -73,42 +83,32 @@ export const getDb = async (): Promise<Database> => {
 };
 
 /**
- * Execute multiple database operations within a transaction.
- * Automatically commits on success or rolls back on failure.
- * Uses a write lock to prevent concurrent transaction conflicts.
- * 
- * @param operations - Async function containing database operations
- * @returns The result of the operations function
- * @throws Re-throws any error after rolling back
+ * Close every pooled connection and forget the instance, so the next getDb()
+ * opens a fresh pool. SQLite rolls back any transaction still open on a
+ * connection when it closes, which is how a failed transaction script is
+ * cleaned up: the connection that ran it cannot be addressed directly.
  */
-export const withTransaction = async <T>(
-    operations: (db: Database) => Promise<T>
-): Promise<T> => {
-    // Acquire exclusive write lock
+export const resetConnections = async (): Promise<void> => {
+    const db = dbInstance;
+    dbInstance = null;
+    initPromise = null;
+    if (db) await db.close();
+};
+
+/**
+ * Run several write statements as one all-or-nothing transaction.
+ *
+ * Statements are passed as data rather than run from a callback, because the
+ * whole transaction has to travel as a single script to stay on one pooled
+ * connection (see db/transaction.ts). Use $1, $2, ... in each statement as if
+ * it stood alone; they are renumbered when the script is assembled.
+ */
+export const withTransaction = async (statements: Statement[]): Promise<void> => {
     const releaseLock = await acquireWriteLock();
-
-    const db = await getDb();
-    let began = false;
-
     try {
-        await db.execute("BEGIN IMMEDIATE");
-        began = true;
-        const result = await operations(db);
-        await db.execute("COMMIT");
-        return result;
-    } catch (error) {
-        if (began) {
-            try {
-                await db.execute("ROLLBACK");
-            } catch (rollbackErr) {
-                // Ignore rollback errors (like if connection triggers rollback automatically)
-                console.error("Rollback failed:", rollbackErr);
-            }
-        }
-        console.error("Transaction failed, rolled back:", error);
-        throw error;
+        const db = await getDb();
+        await runInTransaction(db, statements, resetConnections);
     } finally {
-        // Always release the lock
         releaseLock();
     }
 };

@@ -3,6 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { runMigrations } from './migrations';
+import { FakePool } from './sqlitePool.testutil';
 import {
     runAtomicImport,
     createStaging,
@@ -185,3 +186,22 @@ describe('swap safety net', () => {
         expect(db.isTransaction).toBe(false);
     });
 });
+
+describe('on a connection pool', () => {
+    it('imports correctly when each call can land on a different connection', async () => {
+        const pool = new FakePool();
+        try {
+            await runMigrations(pool);
+            await runAtomicImport(pool, validPayload(), () => pool.reset());
+
+            const c = async (t: string) => (await pool.select<{ c: number }[]>(`SELECT COUNT(*) AS c FROM ${t}`))[0].c;
+            expect([await c('students'), await c('enrollments'), await c('attendance')]).toEqual([2, 2, 2]);
+            // Staging tables were cleaned up, and every connection can still write.
+            expect(await c("sqlite_master WHERE name LIKE '\\_import\\_%' ESCAPE '\\'")).toBe(0);
+            for (let i = 0; i < 3; i++) await pool.execute(`INSERT INTO holidays (date, name) VALUES ('2026-01-0${i + 1}', 'x')`);
+        } finally {
+            pool.destroy();
+        }
+    });
+});
+

@@ -22,22 +22,12 @@ export const getAppSettingsFromDB = async (): Promise<Record<string, any>> => {
 };
 
 export const saveAppSettingsToDB = async (settings: Record<string, any>): Promise<void> => {
-    const { acquireWriteLock } = await import('./index');
-    const releaseLock = await acquireWriteLock();
-
-    try {
-        const { getDb } = await import('./index');
-        const db = await getDb();
-
-        for (const [key, value] of Object.entries(settings)) {
-            await db.execute(
-                `INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ($1, $2, datetime('now'))`,
-                [key, JSON.stringify(value)]
-            );
-        }
-    } finally {
-        releaseLock();
-    }
+    const { withTransaction } = await import('./index');
+    // All keys or none, so a failure cannot leave a half-applied settings change.
+    await withTransaction(Object.entries(settings).map(([key, value]) => ({
+        sql: `INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ($1, $2, datetime('now'))`,
+        params: [key, JSON.stringify(value)]
+    })));
 };
 
 export const getAppSettingFromDB = async (key: string): Promise<any | null> => {

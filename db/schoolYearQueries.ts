@@ -1,5 +1,5 @@
 // School year database queries
-import { getDb } from './index';
+import { getDb, withTransaction, type Statement } from './index';
 import { SchoolYear } from '../types';
 import { SchoolYearDefinition } from './types';
 
@@ -64,7 +64,8 @@ export const recalculateAllSchoolYears = async (): Promise<{ updated: number; to
         "SELECT id, start_date, school_year FROM enrollments"
     );
 
-    let updatedCount = 0;
+    // Collected and applied in one transaction so the fix-up is all or nothing.
+    const updates: Statement[] = [];
 
     for (const enrollment of enrollments) {
         const registrationDate = enrollment.start_date;
@@ -89,15 +90,15 @@ export const recalculateAllSchoolYears = async (): Promise<{ updated: number; to
         }
 
         if (correctSchoolYear !== enrollment.school_year) {
-            await db.execute(
-                "UPDATE enrollments SET school_year = $1 WHERE id = $2",
-                [correctSchoolYear, enrollment.id]
-            );
-            updatedCount++;
+            updates.push({
+                sql: "UPDATE enrollments SET school_year = $1 WHERE id = $2",
+                params: [correctSchoolYear, enrollment.id]
+            });
         }
     }
 
-    return { updated: updatedCount, total: enrollments.length };
+    await withTransaction(updates);
+    return { updated: updates.length, total: enrollments.length };
 };
 
 export const closeOldEnrollments = async (currentSchoolYear: string): Promise<{ updated: number; total: number }> => {
@@ -109,19 +110,16 @@ export const closeOldEnrollments = async (currentSchoolYear: string): Promise<{ 
         [currentSchoolYear]
     );
 
-    let updatedCount = 0;
-
-    for (const enrollment of oldActiveEnrollments) {
+    // One transaction, so a failure cannot leave some old enrollments closed and others not.
+    const updates: Statement[] = oldActiveEnrollments.map(enrollment => {
         const yearParts = enrollment.school_year.split('-');
         const endYear = yearParts.length === 2 ? parseInt(yearParts[1]) : new Date().getFullYear();
-        const exitDate = `${endYear}-06-30`;
+        return {
+            sql: `UPDATE enrollments SET status = 'Completed', end_date = $1 WHERE id = $2`,
+            params: [`${endYear}-06-30`, enrollment.id]
+        };
+    });
 
-        await db.execute(
-            `UPDATE enrollments SET status = 'Completed', end_date = $1 WHERE id = $2`,
-            [exitDate, enrollment.id]
-        );
-        updatedCount++;
-    }
-
-    return { updated: updatedCount, total: oldActiveEnrollments.length };
+    await withTransaction(updates);
+    return { updated: updates.length, total: oldActiveEnrollments.length };
 };

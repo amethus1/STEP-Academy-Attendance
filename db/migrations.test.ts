@@ -3,7 +3,8 @@
 // node:sqlite builtin resolves.
 import { describe, it, expect } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
-import { runMigrations, splitStatements, MIGRATIONS, type MigrationDb } from './migrations';
+import { runMigrations, splitStatements, buildMigrationScript, MIGRATIONS, type MigrationDb } from './migrations';
+import { FakePool } from './sqlitePool.testutil';
 
 /**
  * Adapter exposing node:sqlite through the same surface the Tauri SQL plugin
@@ -191,33 +192,76 @@ describe('runMigrations', () => {
 
     // Regression: an interrupted migration used to leave half-built tables behind,
     // so every later launch died on "table enrollments_new already exists".
-    it('rolls a failed migration back completely and can retry it', async () => {
-        const db = fresh();
-        const real = adapter(db);
+    it('rolls a migration that fails partway back completely, and can retry it', async () => {
+        const pool = new FakePool();
+        try {
+            // Make migration 7 fail inside SQLite after it has already created
+            // enrollments_new and dropped the original table.
+            const failing: MigrationDb = {
+                execute: (q, b) => pool.execute(
+                    q.includes('ALTER TABLE enrollments_new RENAME TO enrollments')
+                        ? q.replace('ALTER TABLE enrollments_new RENAME TO enrollments', 'SELECT * FROM no_such_table')
+                        : q,
+                    b
+                ),
+                select: (q, b) => pool.select(q, b)
+            };
 
-        let failNext = true;
-        const flaky: MigrationDb = {
-            execute: async (q, b) => {
-                if (failNext && /DROP TABLE enrollments\b/i.test(q)) {
-                    failNext = false;
-                    throw new Error('simulated crash mid-migration');
-                }
-                return real.execute(q, b);
-            },
-            select: real.select
-        };
+            await expect(runMigrations(failing)).rejects.toThrow(/no_such_table/);
 
-        await expect(runMigrations(flaky)).rejects.toThrow('simulated crash');
+            // What getDb does on failure: close the pool, which rolls back the
+            // transaction the failed script left open.
+            await pool.reset();
 
-        // Nothing half-built survived the rollback.
-        expect(tableNames(db).filter(n => n.endsWith('_new'))).toEqual([]);
-        const versions = db.prepare('SELECT version FROM schema_migrations').all()
-            .map((r: Record<string, unknown>) => r.version as number);
-        expect(versions).not.toContain(7);
+            const tables = (await pool.select<{ name: string }[]>("SELECT name FROM sqlite_master WHERE type='table'")).map(r => r.name);
+            expect(tables).toContain('enrollments');
+            expect(tables).not.toContain('enrollments_new');
+            const versions = (await pool.select<{ version: number }[]>('SELECT version FROM schema_migrations')).map(r => r.version);
+            expect(versions).toEqual([1, 2, 3, 4, 5, 6]);
 
-        // A retry on the next launch succeeds instead of failing forever.
-        await expect(runMigrations(real)).resolves.toBeUndefined();
-        expect(db.prepare('SELECT version FROM schema_migrations WHERE version = 7').all()).toHaveLength(1);
-        expect(tableNames(db).filter(n => n.endsWith('_new'))).toEqual([]);
+            // The next launch succeeds instead of failing forever.
+            await runMigrations(pool);
+            const after = (await pool.select<{ version: number }[]>('SELECT MAX(version) AS version FROM schema_migrations'))[0].version;
+            expect(after).toBe(MIGRATIONS[MIGRATIONS.length - 1].version);
+        } finally {
+            pool.destroy();
+        }
+    });
+
+    it('applies cleanly on a connection pool, where each call can use a different connection', async () => {
+        const pool = new FakePool();
+        try {
+            await runMigrations(pool);
+            const versions = (await pool.select<{ version: number }[]>('SELECT version FROM schema_migrations ORDER BY version')).map(r => r.version);
+            expect(versions).toEqual(MIGRATIONS.map(m => m.version));
+            // Each script switches foreign keys back on before it ends, so no
+            // connection is left with enforcement disabled.
+            for (let i = 0; i < 3; i++) {
+                expect(pool.connection(i).prepare('PRAGMA foreign_keys').get()).toEqual({ foreign_keys: 1 });
+            }
+        } finally {
+            pool.destroy();
+        }
+    });
+
+    it('refuses to commit a migration that leaves broken references', async () => {
+        const pool = new FakePool();
+        try {
+            await runMigrations(pool);
+            await pool.execute(`INSERT INTO students (id, first_name, last_name) VALUES ('s1','A','B')`);
+            const bad = {
+                version: 999,
+                name: 'Leaves an orphan',
+                sql: `INSERT INTO enrollments (id, student_id, school_year, start_date, grade_level, status)
+                      VALUES ('e1','nobody','2025-2026','2025-08-15','9','Active');`
+            };
+            await expect(pool.execute(buildMigrationScript(bad, '2025-01-01T00:00:00.000Z'))).rejects.toThrow(/missing rows/);
+            await pool.reset();
+
+            expect((await pool.select<{ c: number }[]>('SELECT COUNT(*) AS c FROM enrollments'))[0].c).toBe(0);
+            expect((await pool.select<{ c: number }[]>('SELECT COUNT(*) AS c FROM schema_migrations WHERE version = 999'))[0].c).toBe(0);
+        } finally {
+            pool.destroy();
+        }
     });
 });
