@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
     getAttendanceByDate,
@@ -24,6 +24,20 @@ const auditQuietly = async (...args: Parameters<typeof createAuditLog>) => {
         await createAuditLog(...args);
     } catch (error) {
         console.error('Failed to write audit log:', error);
+    }
+};
+
+/**
+ * Refresh everything that depends on attendance after a write.
+ *
+ * Days attended, days left and the projected release date are computed by the
+ * student queries, not the attendance queries. Refreshing only ['attendance']
+ * left those columns showing their old values after every mark until the cache
+ * expired.
+ */
+const invalidateAttendanceDependents = (queryClient: QueryClient) => {
+    for (const key of ['attendance', 'students', 'uniqueStudents', 'student', 'studentEnrollments', 'attendanceComments']) {
+        queryClient.invalidateQueries({ queryKey: [key] });
     }
 };
 
@@ -60,8 +74,7 @@ export const useSaveAttendance = () => {
             await saveAttendance(records);
         },
         onSuccess: async (_, records) => {
-            // Invalidate all attendance queries to ensure Daily (single date) and Weekly (range) views both update
-            queryClient.invalidateQueries({ queryKey: ['attendance'] });
+            invalidateAttendanceDependents(queryClient);
             await auditQuietly('Save Attendance', 'Attendance', 'Batch', `Saved ${records.length} records`);
         },
         onError: reportWriteFailure('attendance')
@@ -76,7 +89,7 @@ export const useDeleteAttendance = () => {
             await deleteAttendance(data.studentId, data.date);
         },
         onSuccess: async (_, variables) => {
-            queryClient.invalidateQueries({ queryKey: ['attendance'] });
+            invalidateAttendanceDependents(queryClient);
             await auditQuietly('Delete Attendance', 'Attendance', variables.studentId, `Date: ${variables.date}`);
         },
         onError: reportWriteFailure('the attendance change')
@@ -128,6 +141,8 @@ export const useSaveAttendanceComment = () => {
         },
         onSuccess: async (_, variables) => {
             queryClient.invalidateQueries({ queryKey: ['attendance'] });
+            // Student Detail reads notes through its own query.
+            queryClient.invalidateQueries({ queryKey: ['attendanceComments'] });
             await auditQuietly('Save Comment', 'Attendance', variables.studentId, `Date: ${variables.date}, Comment length: ${variables.comment?.length || 0}`);
         },
         onError: reportWriteFailure('the note')

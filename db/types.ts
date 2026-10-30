@@ -80,6 +80,8 @@ export interface StudentWithEnrollment extends DBStudent, DBEnrollment {
     studentId: string;
     enrollmentId: string;
     days_attended: number;
+    /** Presence recorded for today on this enrollment, if any. */
+    today_presence?: string | null;
 }
 
 export interface StudentSearchOptions {
@@ -124,6 +126,8 @@ export interface UniqueStudentRow {
     enrollment_count: number;
     total_days_attended: number;
     latest_days_attended: number;
+    /** Presence recorded today on the latest enrollment, if any. */
+    latest_today_presence?: string | null;
 }
 
 export interface UniqueStudentSearchOptions {

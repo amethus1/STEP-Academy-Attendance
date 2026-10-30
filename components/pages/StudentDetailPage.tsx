@@ -10,7 +10,7 @@ import { useSettings } from '../../hooks/useSettings';
 import { useHolidays, useStudentAttendanceWithComments } from '../../hooks/useAttendance';
 import { Student, StudentStatus } from '../../types';
 import { toISODateString, formatDateForDisplay, getSchoolYearFromDate } from '../../services/dateUtils';
-import { calculateDaysRemaining, calculateProjectedReleaseDate } from '../../services/studentLogic';
+import { calculateDaysRemaining, projectReleaseDate } from '../../services/studentLogic';
 import { mapDBHolidaysToHolidays, mapEnrollmentToUI, EnrollmentUI, mapUIStudentToDB } from '../../services/mappers';
 import { StudentFormModal } from '../common/StudentFormModal';
 import { AttendanceCalendar } from '../common/AttendanceCalendar';
@@ -202,10 +202,14 @@ export const StudentDetailPage: React.FC = () => {
   const enrollmentHistory: EnrollmentUI[] = useMemo(() => {
     if (!studentDetails) return [];
     const holidaysUIForMapper = mapDBHolidaysToHolidays(holidays);
+    const today = toISODateString(new Date());
     return studentDetails.enrollments.map(enrollment =>
-      mapEnrollmentToUI(enrollment, holidaysUIForMapper)
+      mapEnrollmentToUI(enrollment, holidaysUIForMapper, {
+        schoolYears,
+        todayPresence: studentDetails.attendance.find(a => a.enrollment_id === enrollment.id && a.date === today)?.presence
+      })
     );
-  }, [studentDetails, holidays]);
+  }, [studentDetails, holidays, schoolYears]);
 
   // Select the first enrollment by default if none selected
   useMemo(() => {
@@ -262,15 +266,24 @@ export const StudentDetailPage: React.FC = () => {
 
   const displayEntryDate = selectedEnrollment?.start_date || uiStudent.entryDate || '';
 
-  const daysAttended = filteredAttendance.filter(a => a.presence === 'Present').length;
+  // Tardy counts as attended, as on the roster and in reports; counting only
+  // Present showed fewer days and a later release date on this page.
+  const daysAttended = filteredAttendance.filter(a => a.presence === 'Present' || a.presence === 'Tardy').length;
   const creditDays = uiStudent.creditDays || 0;
   const daysRemaining = calculateDaysRemaining(uiStudent.daysAssigned, daysAttended, creditDays);
 
   // Convert DB holidays to UI format using centralized mapper
   const holidaysUI = mapDBHolidaysToHolidays(holidays);
 
-  const projectionStartDate = projectionMethod === 'today' ? toISODateString(new Date()) : displayEntryDate;
-  const projectedReleaseDateISO = calculateProjectedReleaseDate(daysRemaining, holidaysUI, projectionStartDate, uiStudent.status);
+  const todayStr = toISODateString(new Date());
+  const projectedReleaseDateISO = projectReleaseDate({
+    status: uiStudent.status,
+    daysAssigned: uiStudent.daysAssigned,
+    daysAttended,
+    creditDays,
+    entryDate: displayEntryDate,
+    todayPresence: filteredAttendance.find(a => a.date === todayStr)?.presence
+  }, holidaysUI, { mode: projectionMethod === 'today' ? 'today' : 'entry', schoolYears });
   const projectedReleaseDate = projectedReleaseDateISO !== 'N/A' && projectedReleaseDateISO !== 'Completed' ? formatDateForDisplay(projectedReleaseDateISO) : projectedReleaseDateISO;
 
   const handlePrint = () => {

@@ -5,6 +5,7 @@ import { useAttendance, useAttendanceRange, useHolidays, useSaveAttendanceCommen
 import { useAttendanceMarking } from '../../hooks/useAttendanceMarking';
 import { useKeyboardEntry } from '../../hooks/useKeyboardEntry';
 import { useActiveSchoolYear } from '../../hooks/useActiveSchoolYear';
+import { useSchoolYears } from '../../hooks/useSchoolYears';
 import { StudentStatus, Presence } from '../../types';
 import { toISODateString, formatDateForDisplay } from '../../services/dateUtils';
 import { ExtendedStudent, mapDBStudentToUI, mapDBHolidaysToHolidays } from '../../services/mappers';
@@ -35,6 +36,8 @@ export const DailyView: React.FC = () => {
   const todayStr = toISODateString(new Date());
 
   const schoolYear = useActiveSchoolYear(selectedDate);
+  // School years let the projected release date skip breaks between them.
+  const { data: schoolYears = [] } = useSchoolYears();
 
   const { data: rawStudents, isLoading: studentsLoading } = useStudents(schoolYear);
   const { data: attendanceRecords = [], isLoading: attendanceLoading } = useAttendance(selectedDate);
@@ -66,8 +69,8 @@ export const DailyView: React.FC = () => {
   // Transform students
   const studentsInYear = useMemo(() => {
     if (!rawStudents) return [];
-    return rawStudents.map(s => mapDBStudentToUI(s, holidaysUI));
-  }, [rawStudents, holidaysUI]);
+    return rawStudents.map(s => mapDBStudentToUI(s, holidaysUI, { schoolYears }));
+  }, [rawStudents, holidaysUI, schoolYears]);
 
   // --- Is this day finished, and did we skip one? ---
   const MISSED_DAY_LOOKBACK = 14;

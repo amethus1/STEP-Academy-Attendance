@@ -239,10 +239,9 @@ describe('mappers', () => {
             expect(result.daysRemaining).toBe(30);
         });
 
-        it('should use custom projection start date', () => {
-            const result = mapUniqueStudentToUI(mockUniqueStudent, mockHolidays, '2024-09-01');
-            // The function uses the projection start for calculating projected release
-            expect(result.projectedReleaseDate).toBeDefined();
+        it('projects the planned release date from entry when asked', () => {
+            const result = mapUniqueStudentToUI(mockUniqueStudent, mockHolidays, { mode: 'entry' });
+            expect(result.projectedReleaseDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
         });
     });
 

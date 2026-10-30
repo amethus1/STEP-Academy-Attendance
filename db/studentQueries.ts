@@ -114,7 +114,10 @@ export const searchStudents = async (options: StudentSearchOptions): Promise<Stu
           s.guardian_name, s.guardian_phone, s.guardian_email, s.emergency_contact_name, s.emergency_contact_phone, s.photo_url, s.custom_fields,
           e.id as enrollmentId, e.school_year, e.start_date, e.end_date, e.grade_level, e.campus, e.status,
           e.sped_504, e.drg_offense, e.days_assigned, e.credit_days, e.comments,
-          (SELECT COUNT(*) FROM attendance a WHERE a.enrollment_id = e.id AND a.presence IN ('Present', 'Tardy')) as days_attended
+          (SELECT COUNT(*) FROM attendance a WHERE a.enrollment_id = e.id AND a.presence IN ('Present', 'Tardy')) as days_attended,
+          -- Whether today is already marked decides if today can still count
+          -- toward the projected release date. 'localtime' matches the app's date.
+          (SELECT a.presence FROM attendance a WHERE a.enrollment_id = e.id AND a.date = date('now', 'localtime')) as today_presence
         FROM students s
         JOIN enrollments e ON s.id = e.student_id
         ${whereClause}
@@ -187,7 +190,8 @@ export const getUniqueStudents = async (options: UniqueStudentSearchOptions): Pr
             re.comments as latest_comments,
             COALESCE(sa.enrollment_count, 0) as enrollment_count,
             COALESCE(sa.total_days_attended, 0) as total_days_attended,
-            COALESCE(les.days_attended, 0) as latest_days_attended
+            COALESCE(les.days_attended, 0) as latest_days_attended,
+            (SELECT a.presence FROM attendance a WHERE a.enrollment_id = re.id AND a.date = date('now', 'localtime')) as latest_today_presence
         FROM students s
         INNER JOIN ranked_enrollments re ON s.id = re.student_id AND re.rn = 1
         LEFT JOIN student_aggregates sa ON s.id = sa.student_id

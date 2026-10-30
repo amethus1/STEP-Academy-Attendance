@@ -1,7 +1,6 @@
 import { StudentWithEnrollment, DBHoliday, UniqueStudentRow, DBEnrollment, DBStudent } from '../db/queries';
 import { Student, StudentStatus, Holiday } from '../types';
-import { calculateDaysRemaining, calculateProjectedReleaseDate } from './studentLogic';
-import { toISODateString } from './dateUtils';
+import { calculateDaysRemaining, projectReleaseDate, type ProjectionContext } from './studentLogic';
 
 export interface ExtendedStudent extends Student {
     enrollmentId: string; // Enforce enrollmentId presence
@@ -10,7 +9,7 @@ export interface ExtendedStudent extends Student {
     projectedReleaseDate: string;
 }
 
-export const mapDBStudentToUI = (data: StudentWithEnrollment, holidays: Holiday[], projectionStartOverride?: string): ExtendedStudent => {
+export const mapDBStudentToUI = (data: StudentWithEnrollment, holidays: Holiday[], projection: ProjectionContext = {}): ExtendedStudent => {
     // Parse custom fields
     let customFields = {};
     try {
@@ -24,16 +23,10 @@ export const mapDBStudentToUI = (data: StudentWithEnrollment, holidays: Holiday[
     const daysAssigned = data.days_assigned || 45;
     const daysRemaining = calculateDaysRemaining(daysAssigned, daysAttended, creditDays);
 
-    // Use override if provided, otherwise default to today
-    const projectionStart = projectionStartOverride || toISODateString(new Date());
-
-
-    const projectedReleaseDate = calculateProjectedReleaseDate(
-        daysRemaining,
-        holidays,
-        projectionStart,
-        data.status
-    );
+    const projectedReleaseDate = projectReleaseDate({
+        status: data.status, daysAssigned, daysAttended, creditDays,
+        entryDate: data.start_date, todayPresence: data.today_presence
+    }, holidays, projection);
 
     return {
         id: data.studentId, // Note: DB query aliases 'id' as studentId for clarity in join
@@ -154,7 +147,7 @@ export interface UniqueStudentUI {
 export const mapUniqueStudentToUI = (
     row: UniqueStudentRow,
     holidays: Holiday[],
-    projectionStartDate?: string
+    projection: ProjectionContext = {}
 ): UniqueStudentUI => {
     let customFields = {};
     try {
@@ -168,13 +161,10 @@ export const mapUniqueStudentToUI = (
     const daysAssigned = row.latest_days_assigned || 45;
     const daysRemaining = calculateDaysRemaining(daysAssigned, daysAttended, creditDays);
 
-    const projectionStart = projectionStartDate || toISODateString(new Date());
-    const projectedReleaseDate = calculateProjectedReleaseDate(
-        daysRemaining,
-        holidays,
-        projectionStart,
-        row.latest_status
-    );
+    const projectedReleaseDate = projectReleaseDate({
+        status: row.latest_status, daysAssigned, daysAttended, creditDays,
+        entryDate: row.latest_start_date, todayPresence: row.latest_today_presence
+    }, holidays, projection);
 
     return {
         id: row.studentId,
@@ -273,20 +263,17 @@ export interface EnrollmentUI {
 export const mapEnrollmentToUI = (
     enrollment: DBEnrollment & { days_attended: number },
     holidays: Holiday[],
-    projectionStartDate?: string
+    projection: ProjectionContext & { todayPresence?: string | null } = {}
 ): EnrollmentUI => {
     const daysAttended = enrollment.days_attended || 0;
     const creditDays = enrollment.credit_days || 0;
     const daysAssigned = enrollment.days_assigned || 45;
     const daysRemaining = calculateDaysRemaining(daysAssigned, daysAttended, creditDays);
 
-    const projectionStart = projectionStartDate || toISODateString(new Date());
-    const projectedReleaseDate = calculateProjectedReleaseDate(
-        daysRemaining,
-        holidays,
-        projectionStart,
-        enrollment.status
-    );
+    const projectedReleaseDate = projectReleaseDate({
+        status: enrollment.status, daysAssigned, daysAttended, creditDays,
+        entryDate: enrollment.start_date, todayPresence: projection.todayPresence
+    }, holidays, projection);
 
     return {
         id: enrollment.id,

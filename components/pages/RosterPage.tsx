@@ -254,11 +254,9 @@ export const RosterPage: React.FC = () => {
 
   const studentData = useMemo(() => {
     if (!rawStudents) return [];
-    return rawStudents.map(s => {
-      const projectionStart = projectionMethod === 'today' ? undefined : s.latest_start_date;
-      return mapUniqueStudentToUI(s, holidaysUI, projectionStart);
-    });
-  }, [rawStudents, holidaysUI, projectionMethod]);
+    const projection = { mode: projectionMethod === 'today' ? 'today' as const : 'entry' as const, schoolYears: schoolYearsData };
+    return rawStudents.map(s => mapUniqueStudentToUI(s, holidaysUI, projection));
+  }, [rawStudents, holidaysUI, projectionMethod, schoolYearsData]);
 
   const existingStudents = useMemo(() => studentData.map(uniqueStudentToStudent), [studentData]);
 

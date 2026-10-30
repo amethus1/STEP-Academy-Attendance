@@ -114,7 +114,10 @@ export const DashboardPage: React.FC = () => {
 
         // Today's Attendance
         const todaysAttendance = attendanceByDate.get(today) || [];
-        const presentCount = todaysAttendance.filter(a => a.presence === 'Present').length;
+        // Tardy counts as attended here as everywhere else (roster, reports,
+        // release dates); counting only Present understated the rate.
+        const attended = (a: { presence: string }) => a.presence === 'Present' || a.presence === 'Tardy';
+        const presentCount = todaysAttendance.filter(attended).length;
         const attendanceRate = activeStudents.length > 0
             ? Math.round((presentCount / activeStudents.length) * 100)
             : 0;
@@ -139,7 +142,7 @@ export const DashboardPage: React.FC = () => {
             const dayRecords = attendanceByDate.get(dateStr) || [];
             chartData.push({
                 date: dateStr,
-                present: dayRecords.filter(a => a.presence === 'Present').length,
+                present: dayRecords.filter(attended).length,
                 absent: dayRecords.filter(a => a.presence === 'Absent').length
             });
         }

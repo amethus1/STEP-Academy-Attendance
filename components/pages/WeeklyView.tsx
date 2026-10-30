@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { useStudents } from '../../hooks/useStudents';
 import { useAttendanceRange, useHolidays } from '../../hooks/useAttendance';
 import { useActiveSchoolYear } from '../../hooks/useActiveSchoolYear';
+import { useSchoolYears } from '../../hooks/useSchoolYears';
 import { useSettings } from '../../hooks/useSettings';
 import { useAttendanceMarking } from '../../hooks/useAttendanceMarking';
 import { useKeyboardEntry } from '../../hooks/useKeyboardEntry';
@@ -47,6 +48,8 @@ export const WeeklyView: React.FC = () => {
 
   // Derive school year - prefer manual selection, else auto-detect
   const schoolYear = useActiveSchoolYear(currentDate);
+  // School years let the projected release date skip breaks between them.
+  const { data: schoolYears = [] } = useSchoolYears();
 
   const { data: rawStudents, isLoading: studentsLoading } = useStudents(schoolYear);
   const { data: holidays = [] } = useHolidays();
@@ -74,8 +77,8 @@ export const WeeklyView: React.FC = () => {
   const holidaysUI = useMemo(() => mapDBHolidaysToHolidays(holidays), [holidays]);
   const studentsInYear = useMemo(() => {
     if (!rawStudents) return [];
-    return rawStudents.map(s => mapDBStudentToUI(s, holidaysUI));
-  }, [rawStudents, holidaysUI]);
+    return rawStudents.map(s => mapDBStudentToUI(s, holidaysUI, { schoolYears }));
+  }, [rawStudents, holidaysUI, schoolYears]);
 
   // Use centralized filter hook
   const {
