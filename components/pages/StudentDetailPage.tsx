@@ -289,6 +289,7 @@ export const StudentDetailPage: React.FC = () => {
     todayPresence: filteredAttendance.find(a => a.date === todayStr)?.presence,
     summerSessionIds: studentDetails?.summerSessionIds
   }, holidaysUI, { mode: projectionMethod === 'today' ? 'today' : 'entry', schoolYears, summerSessions });
+  const studentSessions = summerSessions.filter(s => studentDetails?.summerSessionIds?.includes(s.id));
   const projectedReleaseDate = projectedReleaseDateISO !== 'N/A' && projectedReleaseDateISO !== 'Completed' ? formatDateForDisplay(projectedReleaseDateISO) : projectedReleaseDateISO;
 
   const handlePrint = () => {
@@ -434,6 +435,13 @@ export const StudentDetailPage: React.FC = () => {
           <StatCard label="Entry Date" value={formatDateForDisplay(uiStudent.entryDate)} />
           <StatCard label="Projected Release" value={projectedReleaseDate} />
         </div>
+
+        {studentSessions.length > 0 && (
+          <p className="text-sm text-sky-800 dark:text-sky-200 bg-sky-50 dark:bg-sky-900/30 border border-sky-200 dark:border-sky-800 rounded-md px-4 py-2">
+            On summer session: {studentSessions.map(s => `${s.name} (${formatDateForDisplay(s.startDate)} – ${formatDateForDisplay(s.endDate)})`).join(', ')}.
+            Session days count toward the placement.
+          </p>
+        )}
 
         {/* Projection Method Toggle */}
         <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow-sm flex justify-center items-center gap-4 print:hidden">

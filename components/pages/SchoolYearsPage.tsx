@@ -4,6 +4,8 @@ import { useSchoolYears, useCreateSchoolYear, useUpdateSchoolYear, useDeleteScho
 import { SchoolYear } from '../../types';
 import { TrashIcon, PencilIcon } from '../icons/Icons';
 import { formatDateForDisplay } from '../../services/dateUtils';
+import { placeholderYears } from '../../services/schoolCalendar';
+import { SummerSessionsSection } from './SummerSessionsSection';
 
 export const SchoolYearsPage: React.FC = () => {
     const { data: schoolYears = [], isLoading } = useSchoolYears();
@@ -37,44 +39,33 @@ export const SchoolYearsPage: React.FC = () => {
     };
 
     const handleDelete = async (id: string, name: string) => {
-        if (confirm(`Are you sure you want to delete ${name}? This will rely on fallback logic for dates in this range.`)) {
+        if (confirm(`Are you sure you want to delete ${name}? Dates in that year will then follow the nearest remaining year's pattern.`)) {
             await deleteSchoolYear.mutateAsync(id);
         }
     };
 
-    const handleAddCurrentYear = async () => {
-        // Calculate current school year based on today's date
+    const handleAddCurrentYear = () => {
+        // School years run August to July: before August we're in the previous one.
         const today = new Date();
-        const currentYear = today.getFullYear();
-        const month = today.getMonth(); // 0-indexed (0 = January)
+        const startYear = today.getMonth() < 7 ? today.getFullYear() - 1 : today.getFullYear();
+        const yearName = `${startYear}-${startYear + 1}`;
 
-        // If we're before August, we're in the previous school year
-        const startYear = month < 7 ? currentYear - 1 : currentYear;
-        const endYear = startYear + 1;
-        const yearName = `${startYear}-${endYear}`;
-
-        // Check if this year already exists
-        const exists = schoolYears.some(y => y.name === yearName);
-        if (exists) {
+        if (schoolYears.some(y => y.name === yearName)) {
             alert(`School year ${yearName} already exists.`);
             return;
         }
-
-        try {
-            await createSchoolYear.mutateAsync({
-                id: crypto.randomUUID(),
-                name: yearName,
-                startDate: `${startYear}-08-01`,
-                endDate: `${endYear}-07-31`
-            });
-        } catch (error) {
-            console.error("Failed to create school year", error);
-            alert("Failed to create school year.");
-        }
+        // Ask for the real first and last day: guessed dates would hide summer break.
+        setEditingYear(null);
+        setFormData({ name: yearName, startDate: '', endDate: '' });
+        setIsModalOpen(true);
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (formData.endDate < formData.startDate) {
+            alert('The last day of school must be after the first day.');
+            return;
+        }
         try {
             if (editingYear) {
                 await updateSchoolYear.mutateAsync({
@@ -93,6 +84,8 @@ export const SchoolYearsPage: React.FC = () => {
             alert("Failed to save school year.");
         }
     };
+
+    const placeholders = placeholderYears(schoolYears);
 
     if (isLoading) return <div className="p-8 text-center bg-slate-50 dark:bg-slate-900 rounded-lg">Loading school years...</div>;
 
@@ -118,13 +111,26 @@ export const SchoolYearsPage: React.FC = () => {
                 </div>
             </div>
 
+            <p className="text-sm text-slate-500 dark:text-slate-400 -mt-3">
+                Enter each year&apos;s first and last day of school. Weekdays between the last day and the next year&apos;s first day are
+                summer break: they don&apos;t count toward placements, so release dates move into the next school year.
+            </p>
+
+            {placeholders.length > 0 && (
+                <div role="alert" className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700 p-4 text-sm text-amber-800 dark:text-amber-200">
+                    <strong>{placeholders.map(y => y.name).join(', ')}</strong> {placeholders.length === 1 ? 'still uses' : 'still use'} the
+                    default dates (August 1 to July 31), so the app sees no summer break. Edit {placeholders.length === 1 ? 'it' : 'them'} to
+                    the real first and last day of school so release dates skip the summer.
+                </div>
+            )}
+
             <div className="bg-white dark:bg-slate-800 shadow rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700">
                 <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
                     <thead className="bg-slate-50 dark:bg-slate-900">
                         <tr>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Name</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Start Date</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">End Date</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">First Day of School</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Last Day of School</th>
                             <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
@@ -132,7 +138,7 @@ export const SchoolYearsPage: React.FC = () => {
                         {schoolYears.length === 0 ? (
                             <tr>
                                 <td colSpan={4} className="px-6 py-4 text-center text-slate-500 dark:text-slate-400">
-                                    No school years defined. System is using default legacy logic.
+                                    No school years yet. Until you add them, every weekday except holidays counts as a school day.
                                 </td>
                             </tr>
                         ) : (
@@ -171,8 +177,9 @@ export const SchoolYearsPage: React.FC = () => {
                         <h2 className="text-xl font-bold mb-4 dark:text-white">{editingYear ? 'Edit School Year' : 'Add School Year'}</h2>
                         <form onSubmit={handleSubmit} className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Name</label>
+                                <label htmlFor="year-name" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Name</label>
                                 <input
+                                    id="year-name"
                                     type="text"
                                     required
                                     placeholder="e.g. 2024-2025"
@@ -182,8 +189,9 @@ export const SchoolYearsPage: React.FC = () => {
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Start Date</label>
+                                <label htmlFor="year-start" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">First day of school</label>
                                 <input
+                                    id="year-start"
                                     type="date"
                                     required
                                     value={formData.startDate}
@@ -192,8 +200,9 @@ export const SchoolYearsPage: React.FC = () => {
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">End Date</label>
+                                <label htmlFor="year-end" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Last day of school</label>
                                 <input
+                                    id="year-end"
                                     type="date"
                                     required
                                     value={formData.endDate}
@@ -219,6 +228,8 @@ export const SchoolYearsPage: React.FC = () => {
                         </form>
                 </Dialog>
             )}
+
+            <SummerSessionsSection />
         </div>
     );
 };
