@@ -162,3 +162,42 @@ describe('canRecordAttendance', () => {
         expect(canRecordAttendance({ ...s, status: 'Withdrawn' }, TUE, today, new Set())).toBe(false);
     });
 });
+
+describe('summer sessions', () => {
+    // School ends Fri 30 May 2025. Session s1 runs Mon 9 - Fri 27 June.
+    const calendar = {
+        holidayDates: new Set<string>(),
+        schoolYears: [{ startDate: '2024-08-19', endDate: '2025-05-30' }, { startDate: '2025-08-18', endDate: '2026-05-29' }],
+        summerSessions: [{ id: 's1', startDate: '2025-06-09', endDate: '2025-06-27' }]
+    };
+    const onSession = student({ id: 'on', summerSessionIds: ['s1'] });
+    const offSession = student({ id: 'off' });
+    const SUMMER_DAY = '2025-06-10'; // Tuesday, inside the session
+    const GAP_DAY = '2025-06-03';    // Tuesday, summer before the session
+
+    it('expects only students on the session during a session day', () => {
+        const day = getDayCompleteness([onSession, offSession], SUMMER_DAY, new Set(), calendar);
+        expect(day).toMatchObject({ isSchoolDay: true, expected: 1, unmarked: 1 });
+    });
+
+    it('expects nobody on a summer day with no session', () => {
+        const day = getDayCompleteness([onSession, offSession], GAP_DAY, new Set(), calendar);
+        expect(day).toMatchObject({ isSchoolDay: false, expected: 0 });
+    });
+
+    it('lets only session students be marked on a session day', () => {
+        expect(canRecordAttendance(onSession, SUMMER_DAY, '2025-06-30', calendar)).toBe(true);
+        expect(canRecordAttendance(offSession, SUMMER_DAY, '2025-06-30', calendar)).toBe(false);
+    });
+
+    it('flags an unmarked session day as missed, but not summer days without a session', () => {
+        const missed = findMissedSchoolDays([onSession, offSession], new Set(), calendar, '2025-06-12', 14);
+        expect(missed).toContain('2025-06-09');
+        expect(missed).not.toContain(GAP_DAY);
+    });
+
+    it('does not flag a session day when no session student was enrolled yet', () => {
+        const missed = findMissedSchoolDays([offSession], new Set(), calendar, '2025-06-12', 14);
+        expect(missed.filter(d => d >= '2025-06-02')).toEqual([]);
+    });
+});

@@ -216,6 +216,30 @@ export const MIGRATIONS: Migration[] = [
         ALTER TABLE students ADD COLUMN gender TEXT;
         ALTER TABLE students ADD COLUMN guardian_email TEXT;
         `
+    },
+    {
+        version: 9,
+        name: 'Add Summer Sessions',
+        sql: `
+        -- Optional sessions held between school years. Attendance taken during
+        -- one counts toward the student's current placement, and only students
+        -- on a session's roster are expected to attend on its dates.
+        -- (No semicolons in comments here: the runner splits statements on them.)
+        CREATE TABLE summer_sessions (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL
+        );
+
+        CREATE TABLE summer_session_students (
+            session_id TEXT NOT NULL REFERENCES summer_sessions(id) ON DELETE CASCADE,
+            student_id TEXT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+            PRIMARY KEY (session_id, student_id)
+        );
+
+        CREATE INDEX idx_summer_session_students_student ON summer_session_students(student_id);
+        `
     }
 ];
 

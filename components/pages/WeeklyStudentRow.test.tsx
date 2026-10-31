@@ -25,7 +25,7 @@ const isHoliday = () => false;
 const renderRow = (props: Partial<React.ComponentProps<typeof WeeklyStudentRow>> = {}) => {
     const all: React.ComponentProps<typeof WeeklyStudentRow> = {
         student, displayDays: days, attendanceMap: {}, fixedColumns: columns,
-        onMarkAttendance: vi.fn(), isHoliday, holidayDates: noHolidays, todayStr: '2025-09-10',
+        onMarkAttendance: vi.fn(), isHoliday, calendar: noHolidays, todayStr: '2025-09-10',
         isSelected: false, onToggleSelection: vi.fn(), focusedDayIndex: null,
         ...props
     };
@@ -38,7 +38,7 @@ describe('WeeklyStudentRow', () => {
     it('shows the checkbox as ticked once the row is selected', () => {
         const props = {
             student, displayDays: days, attendanceMap: {}, fixedColumns: columns,
-            onMarkAttendance: vi.fn(), isHoliday, holidayDates: noHolidays, todayStr: '2025-09-10',
+            onMarkAttendance: vi.fn(), isHoliday, calendar: noHolidays, todayStr: '2025-09-10',
             onToggleSelection: vi.fn(), focusedDayIndex: null
         };
         const { rerender } = render(
@@ -58,7 +58,7 @@ describe('WeeklyStudentRow', () => {
     });
 
     it('marks holidays and offers no buttons for them', () => {
-        renderRow({ isHoliday: d => d === '2025-09-09', holidayDates: new Set(['2025-09-09']) });
+        renderRow({ isHoliday: d => d === '2025-09-09', calendar: new Set(['2025-09-09']) });
         expect(screen.getByText('HOLIDAY')).toBeTruthy();
         expect(screen.getAllByRole('button', { name: 'Mark as absent' })).toHaveLength(2);
     });

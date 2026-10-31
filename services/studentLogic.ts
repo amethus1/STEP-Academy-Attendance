@@ -1,33 +1,12 @@
 import { Holiday } from '../types';
 import { toISODateString } from './dateUtils';
+import { isSchoolDayFor, type DateRange, type SummerSessionRange } from './schoolCalendar';
 
 /**
  * Calculates the number of remaining days a student needs to attend.
  */
 export const calculateDaysRemaining = (daysAssigned: number, daysAttended: number, creditDays: number): number => {
     return Math.max(0, daysAssigned - daysAttended - creditDays);
-};
-
-/** A school year's span; days between one year's end and the next year's start are breaks. */
-export interface SchoolSession {
-    startDate: string;
-    endDate: string;
-}
-
-/**
- * Whether `isoDate` falls inside the school calendar.
- *
- * Dates between two defined school years (summer break, when each year is set
- * to its real first and last day) are not. Dates after the last defined year
- * are treated as in session, so projecting past it behaves as it always has
- * until the next year is defined.
- */
-export const isInSession = (isoDate: string, sessions: SchoolSession[] = []): boolean => {
-    if (sessions.length === 0) return true;
-    if (sessions.some(s => isoDate >= s.startDate && isoDate <= s.endDate)) return true;
-    const lastEnd = sessions.reduce((max, s) => (s.endDate > max ? s.endDate : max), '');
-    const firstStart = sessions.reduce((min, s) => (s.startDate < min ? s.startDate : min), sessions[0].startDate);
-    return isoDate > lastEnd || isoDate < firstStart;
 };
 
 export interface ProjectionOptions {
@@ -37,8 +16,12 @@ export interface ProjectionOptions {
      * attend today, and marking them present counts it as a day.
      */
     includeStartDay?: boolean;
-    /** School years, so breaks between them are skipped. */
-    schoolYears?: SchoolSession[];
+    /** Regular school years (first to last day of school); summer between them is skipped. */
+    schoolYears?: DateRange[];
+    /** Summer sessions; their days count only for students on their roster. */
+    summerSessions?: SummerSessionRange[];
+    /** The summer sessions this student is on. */
+    studentSessionIds?: string[];
 }
 
 /**
@@ -61,23 +44,24 @@ export const calculateProjectedReleaseDate = (
         return 'Completed';
     }
 
-    const holidayDates = new Set(holidays.map(h => h.date));
-    const isSchoolDay = (iso: string, day: Date) => {
-        const dow = day.getUTCDay();
-        return dow !== 0 && dow !== 6 && !holidayDates.has(iso) && isInSession(iso, options.schoolYears);
+    const calendar = {
+        holidayDates: new Set(holidays.map(h => h.date)),
+        schoolYears: options.schoolYears,
+        summerSessions: options.summerSessions
     };
+    const studentSessionIds = options.studentSessionIds ?? [];
 
     // Noon UTC so stepping a day at a time is never shifted by a time zone or DST.
     const cursor = new Date(projectionStartDateStr + 'T12:00:00Z');
     if (!options.includeStartDay) cursor.setUTCDate(cursor.getUTCDate() + 1);
 
-    // A summer gap plus a year of school days is well under this.
-    const maxIterations = daysRemaining * 7 + 400;
+    // Several summers plus the school days themselves are well under this.
+    const maxIterations = daysRemaining * 7 + 1200;
     let counted = 0;
 
     for (let i = 0; i < maxIterations; i++) {
         const iso = cursor.toISOString().slice(0, 10);
-        if (isSchoolDay(iso, cursor)) {
+        if (isSchoolDayFor(iso, calendar, studentSessionIds)) {
             counted++;
             if (counted === daysRemaining) return iso;
         }
@@ -94,8 +78,10 @@ export interface ProjectionContext {
      * placement, counting the entry day as day 1 of the assigned days.
      */
     mode?: 'today' | 'entry';
-    /** School years, so breaks between them are skipped. */
-    schoolYears?: SchoolSession[];
+    /** Regular school years; summer between them is skipped. */
+    schoolYears?: DateRange[];
+    /** Summer sessions; their days count only for students on their roster. */
+    summerSessions?: SummerSessionRange[];
     /** Injectable for tests; defaults to the local date. */
     today?: string;
 }
@@ -118,11 +104,14 @@ export const projectReleaseDate = (
         entryDate: string;
         /** Presence recorded for today, if any. */
         todayPresence?: string | null;
+        /** Summer sessions the student is on; their days count toward the projection. */
+        summerSessionIds?: string[];
     },
     holidays: Holiday[],
     context: ProjectionContext = {}
 ): string => {
-    const { mode = 'today', schoolYears, today = toISODateString(new Date()) } = context;
+    const { mode = 'today', schoolYears, summerSessions, today = toISODateString(new Date()) } = context;
+    const calendar = { schoolYears, summerSessions, studentSessionIds: student.summerSessionIds };
 
     if (mode === 'entry') {
         return calculateProjectedReleaseDate(
@@ -130,7 +119,7 @@ export const projectReleaseDate = (
             holidays,
             student.entryDate,
             student.status,
-            { includeStartDay: true, schoolYears }
+            { includeStartDay: true, ...calendar }
         );
     }
 
@@ -139,6 +128,6 @@ export const projectReleaseDate = (
         holidays,
         today,
         student.status,
-        { includeStartDay: !student.todayPresence, schoolYears }
+        { includeStartDay: !student.todayPresence, ...calendar }
     );
 };

@@ -2,7 +2,7 @@ import React, { memo } from 'react';
 import { Link } from 'react-router-dom';
 import { ExtendedStudent } from '../../services/mappers';
 import { Presence } from '../../types';
-import { canRecordAttendance } from '../../services/attendanceCompleteness';
+import { canRecordAttendance, type CalendarLike } from '../../services/attendanceCompleteness';
 import { toISODateString, formatDateForDisplay } from '../../services/dateUtils';
 import { AttendanceButton } from '../common/AttendanceButton';
 import { StatusBadge } from '../common/StatusBadge';
@@ -14,7 +14,8 @@ interface WeeklyStudentRowProps {
     fixedColumns: { id: string; label: string; isSticky?: boolean; widthClass?: string }[];
     onMarkAttendance: (studentId: string, date: string, current: Presence | undefined, target: Presence) => void;
     isHoliday: (date: string) => boolean;
-    holidayDates: Set<string>;
+    /** When school is in session (holidays, school years, summer sessions). */
+    calendar: CalendarLike;
     todayStr: string;
 
     isSelected?: boolean;
@@ -50,7 +51,7 @@ const getCellValue = (student: ExtendedStudent, columnId: string) => {
     }
 }
 
-export const WeeklyStudentRow = memo(({ student, displayDays, attendanceMap, fixedColumns, onMarkAttendance, isHoliday, holidayDates, todayStr, isSelected, onToggleSelection, focusedDayIndex }: WeeklyStudentRowProps) => {
+export const WeeklyStudentRow = memo(({ student, displayDays, attendanceMap, fixedColumns, onMarkAttendance, isHoliday, calendar, todayStr, isSelected, onToggleSelection, focusedDayIndex }: WeeklyStudentRowProps) => {
     return (
         <tr data-weekly-row={student.id} className={`hover:bg-slate-50 dark:hover:bg-slate-800 ${isSelected ? 'bg-blue-50 dark:bg-blue-900/30' : ''}`}>
             {fixedColumns.map((col, index) => (
@@ -71,7 +72,7 @@ export const WeeklyStudentRow = memo(({ student, displayDays, attendanceMap, fix
                 const presence = attendanceMap[dateStr];
 
                 const isDayHoliday = isHoliday(dateStr);
-                const isDisabled = !canRecordAttendance(student, dateStr, todayStr, holidayDates);
+                const isDisabled = !canRecordAttendance(student, dateStr, todayStr, calendar);
                 const isRegistrationDay = student.registrationDate === dateStr;
                 const focusRing = focusedDayIndex === dayIndex ? 'ring-2 ring-inset ring-sky-400 bg-sky-50 dark:bg-sky-900/30' : '';
 
@@ -130,7 +131,7 @@ export const WeeklyStudentRow = memo(({ student, displayDays, attendanceMap, fix
     prev.displayDays === next.displayDays &&
     prev.isSelected === next.isSelected &&
     prev.focusedDayIndex === next.focusedDayIndex &&
-    prev.holidayDates === next.holidayDates &&
+    prev.calendar === next.calendar &&
     prev.isHoliday === next.isHoliday &&
     prev.onMarkAttendance === next.onMarkAttendance &&
     prev.onToggleSelection === next.onToggleSelection &&

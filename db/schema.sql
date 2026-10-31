@@ -90,3 +90,18 @@ CREATE TABLE IF NOT EXISTS app_settings (
     value TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+-- Optional sessions held between school years (see migration 9).
+CREATE TABLE IF NOT EXISTS summer_sessions (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  start_date TEXT NOT NULL,
+  end_date TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS summer_session_students (
+  session_id TEXT NOT NULL REFERENCES summer_sessions(id) ON DELETE CASCADE,
+  student_id TEXT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  PRIMARY KEY (session_id, student_id)
+);
+CREATE INDEX IF NOT EXISTS idx_summer_session_students_student ON summer_session_students(student_id);

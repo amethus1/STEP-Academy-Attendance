@@ -1,5 +1,6 @@
 import type { StudentWithEnrollment, DBAttendance, DBHoliday } from '../db/types';
 import { toISODateString } from './dateUtils';
+import { isSchoolDayFor, type DateRange, type SummerSessionRange } from './schoolCalendar';
 
 export interface ReportingAnalyticsInput {
     students: StudentWithEnrollment[];
@@ -7,6 +8,8 @@ export interface ReportingAnalyticsInput {
     holidays: DBHoliday[];
     dateRange: { start: string; end: string };
     thresholds?: { atRisk: number; atRiskDays: number };
+    /** School years and summer sessions, so summer days count only for session students. */
+    schoolCalendar?: { schoolYears?: DateRange[]; summerSessions?: SummerSessionRange[] };
     /** Injectable for tests; defaults to now. */
     today?: Date;
 }
@@ -54,6 +57,7 @@ export const computeReportingAnalytics = ({
     holidays,
     dateRange,
     thresholds = { atRisk: 5, atRiskDays: 30 },
+    schoolCalendar = {},
     today = new Date()
 }: ReportingAnalyticsInput): ReportingAnalytics => {
     const activeStudents = students.filter(s => s.status === 'Active');
@@ -69,6 +73,7 @@ export const computeReportingAnalytics = ({
     }
 
     const holidaySet = new Set(holidays.map(h => h.date));
+    const calendar = { holidayDates: holidaySet, ...schoolCalendar };
     const attendanceByDate: Record<string, { present: number; absent: number }> = {};
     const campusStats: Record<string, { present: number; possible: number }> = {};
     const gradeStats: Record<string, { present: number; possible: number }> = {};
@@ -98,12 +103,11 @@ export const computeReportingAnalytics = ({
 
         const campus = student.campus || 'Unknown';
         const grade = student.grade_level || 'Unknown';
+        const sessionIds = student.summer_session_ids ? student.summer_session_ids.split(',') : [];
 
         while (currentDate <= endDate) {
             const dateStr = toISODateString(currentDate);
-            const dayOfWeek = currentDate.getUTCDay();
-
-            if (dayOfWeek !== 0 && dayOfWeek !== 6 && !holidaySet.has(dateStr)) {
+            if (isSchoolDayFor(dateStr, calendar, sessionIds)) {
                 totalPossible++;
                 campusStats[campus].possible++;
                 gradeStats[grade].possible++;

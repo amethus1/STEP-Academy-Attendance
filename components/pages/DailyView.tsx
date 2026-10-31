@@ -1,16 +1,17 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useStudents } from '../../hooks/useStudents';
-import { useAttendance, useAttendanceRange, useHolidays, useSaveAttendanceComment } from '../../hooks/useAttendance';
+import { useAttendance, useAttendanceRange, useSaveAttendanceComment } from '../../hooks/useAttendance';
+import { useSchoolCalendar } from '../../hooks/useSummerSessions';
 import { useAttendanceMarking } from '../../hooks/useAttendanceMarking';
 import { useKeyboardEntry } from '../../hooks/useKeyboardEntry';
 import { useActiveSchoolYear } from '../../hooks/useActiveSchoolYear';
-import { useSchoolYears } from '../../hooks/useSchoolYears';
 import { StudentStatus, Presence } from '../../types';
 import { toISODateString, formatDateForDisplay } from '../../services/dateUtils';
-import { ExtendedStudent, mapDBStudentToUI, mapDBHolidaysToHolidays } from '../../services/mappers';
+import { ExtendedStudent, mapDBStudentToUI } from '../../services/mappers';
+import { isSchoolDayFor, isInRegularTerm, isWeekend, sessionsOn } from '../../services/schoolCalendar';
 import { getDayCompleteness, findMissedSchoolDays } from '../../services/attendanceCompleteness';
-import { CheckCircleIcon, CalendarDaysIcon, ExclamationTriangleIcon } from '../icons/Icons';
+import { CheckCircleIcon, CalendarDaysIcon, ExclamationTriangleIcon, SunIcon } from '../icons/Icons';
 import { StatusBadge } from '../common/StatusBadge';
 import { AttendanceButton } from '../common/AttendanceButton';
 import { PageLoadingSkeleton } from '../common/SkeletonLoader';
@@ -36,16 +37,12 @@ export const DailyView: React.FC = () => {
   const todayStr = toISODateString(new Date());
 
   const schoolYear = useActiveSchoolYear(selectedDate);
-  // School years let the projected release date skip breaks between them.
-  const { data: schoolYears = [] } = useSchoolYears();
 
   const { data: rawStudents, isLoading: studentsLoading } = useStudents(schoolYear);
   const { data: attendanceRecords = [], isLoading: attendanceLoading } = useAttendance(selectedDate);
-  const { data: holidays = [] } = useHolidays();
+  // Holidays, school years and summer sessions: when school is in session.
+  const { holidays, holidaysUI, calendar, projection, summerSessions } = useSchoolCalendar();
   const { mutate: saveComment } = useSaveAttendanceComment();
-
-  // Convert holidays to UI format once
-  const holidaysUI = useMemo(() => mapDBHolidaysToHolidays(holidays), [holidays]);
 
   // Build memoized lookups
   const attendanceByStudent = useMemo(() => {
@@ -69,8 +66,8 @@ export const DailyView: React.FC = () => {
   // Transform students
   const studentsInYear = useMemo(() => {
     if (!rawStudents) return [];
-    return rawStudents.map(s => mapDBStudentToUI(s, holidaysUI, { schoolYears }));
-  }, [rawStudents, holidaysUI, schoolYears]);
+    return rawStudents.map(s => mapDBStudentToUI(s, holidaysUI, projection));
+  }, [rawStudents, holidaysUI, projection]);
 
   // --- Is this day finished, and did we skip one? ---
   const MISSED_DAY_LOOKBACK = 14;
@@ -83,7 +80,6 @@ export const DailyView: React.FC = () => {
 
   const { data: recentAttendance = [] } = useAttendanceRange(lookbackStart, selectedDate);
 
-  const holidayDates = useMemo(() => new Set(holidays.map(h => h.date)), [holidays]);
   const holidayNamesByDate = useMemo(
     () => Object.fromEntries(holidays.map(h => [h.date, h.name])),
     [holidays]
@@ -94,21 +90,21 @@ export const DailyView: React.FC = () => {
       studentsInYear,
       selectedDate,
       new Set(Object.keys(attendanceByStudent)),
-      holidayDates,
+      calendar,
       holidayNamesByDate
     ),
-    [studentsInYear, selectedDate, attendanceByStudent, holidayDates, holidayNamesByDate]
+    [studentsInYear, selectedDate, attendanceByStudent, calendar, holidayNamesByDate]
   );
 
   const missedDays = useMemo(
     () => findMissedSchoolDays(
       studentsInYear,
       new Set(recentAttendance.map(r => r.date)),
-      holidayDates,
+      calendar,
       selectedDate,
       MISSED_DAY_LOOKBACK
     ),
-    [studentsInYear, recentAttendance, holidayDates, selectedDate]
+    [studentsInYear, recentAttendance, calendar, selectedDate]
   );
 
 
@@ -173,9 +169,17 @@ export const DailyView: React.FC = () => {
   const noAttendanceDue = !dayCompleteness.isSchoolDay || isFutureDate;
   const markingLocked = noAttendanceDue && unlockedDate !== selectedDate;
 
+  // On a summer session day only students on that session's roster are due;
+  // others stay locked unless the whole day was unlocked.
+  const todaysSessions = useMemo(() => sessionsOn(selectedDate, summerSessions), [selectedDate, summerSessions]);
+  const canMarkStudent = useCallback((s: ExtendedStudent) =>
+    s.status === StudentStatus.Active && !markingLocked &&
+    (unlockedDate === selectedDate || isSchoolDayFor(selectedDate, calendar, s.summerSessionIds)),
+    [markingLocked, unlockedDate, selectedDate, calendar]);
+
   const markAllPresent = () => {
     if (markingLocked) return;
-    const active = finalFilteredStudents.filter(s => s.status === StudentStatus.Active);
+    const active = finalFilteredStudents.filter(canMarkStudent);
     if (active.length === 0) return;
 
     const overwritten = active.filter(s => {
@@ -193,16 +197,15 @@ export const DailyView: React.FC = () => {
   };
 
   const handleMarkAttendance = useCallback((studentId: string, currentPresence: Presence | undefined, targetPresence: Presence) => {
-    if (markingLocked) return;
     const student = studentsInYear.find(s => s.id === studentId);
-    if (!student) return;
+    if (!student || !canMarkStudent(student)) return;
     mark(student, selectedDate, currentPresence, targetPresence);
-  }, [markingLocked, studentsInYear, selectedDate, mark]);
+  }, [canMarkStudent, studentsInYear, selectedDate, mark]);
 
   // --- Keyboard entry ---
   const markableStudents = useMemo(
-    () => finalFilteredStudents.filter(s => s.status === StudentStatus.Active),
-    [finalFilteredStudents]
+    () => finalFilteredStudents.filter(canMarkStudent),
+    [finalFilteredStudents, canMarkStudent]
   );
 
   const keyboard = useKeyboardEntry({
@@ -276,7 +279,8 @@ export const DailyView: React.FC = () => {
                 key={p}
                 currentPresence={currentPresence}
                 targetPresence={p}
-                disabled={markingLocked}
+                disabled={!canMarkStudent(s)}
+                disabledReason={markingLocked ? undefined : 'Not on the summer session running on this date'}
                 onClick={() => handleMarkAttendance(s.id, currentPresence, p)}
               />
             ))}
@@ -373,13 +377,24 @@ export const DailyView: React.FC = () => {
 
       {/* Completeness: a silently unmarked day under-counts served days. */}
       <div aria-live="polite" className="space-y-3">
+        {todaysSessions.length > 0 && !isInRegularTerm(selectedDate, projection.schoolYears) && (
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-sky-50 dark:bg-sky-900/20 text-sky-900 dark:text-sky-200 text-sm border border-sky-200 dark:border-sky-800">
+            <SunIcon className="h-5 w-5 flex-shrink-0" />
+            <span>
+              Summer session: <strong>{todaysSessions.map(s => s.name).join(', ')}</strong>. Only students on its roster are expected; manage rosters under Settings &rarr; School Years.
+            </span>
+          </div>
+        )}
         {noAttendanceDue ? (
           <div className="flex items-center justify-between gap-3 flex-wrap p-3 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-sm">
             <span className="flex items-center gap-2">
               <CalendarDaysIcon className="h-5 w-5 flex-shrink-0" />
               <span>
                 No attendance expected — {dayCompleteness.holidayName
-                  || (!dayCompleteness.isSchoolDay ? 'this date is not a school day' : 'this date is in the future')}.
+                  || (dayCompleteness.isSchoolDay ? 'this date is in the future'
+                    : !isWeekend(selectedDate) && !isInRegularTerm(selectedDate, projection.schoolYears)
+                      ? 'it is summer break and no summer session is scheduled'
+                      : 'this date is not a school day')}.
                 {markingLocked
                   ? ' Marking is locked so a stray click does not count as a day attended.'
                   : ' Marking is unlocked for this date; anything recorded counts toward days attended.'}

@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useUniqueStudents, useCreateStudent } from '../../hooks/useStudents';
 import { useSchoolYears } from '../../hooks/useSchoolYears';
+import { useSummerSessions } from '../../hooks/useSummerSessions';
 import { useActiveSchoolYear } from '../../hooks/useActiveSchoolYear';
 import { useHolidays } from '../../hooks/useAttendance';
 import { useSettings } from '../../hooks/useSettings';
@@ -153,6 +154,7 @@ export const RosterPage: React.FC = () => {
 
   // New Hooks
   const { data: schoolYearsData = [] } = useSchoolYears();
+  const { data: summerSessions = [] } = useSummerSessions();
   // Extract just the year names from the SchoolYear objects
   const schoolYearNames = useMemo(() => schoolYearsData.map(y => y.name), [schoolYearsData]);
   const allSchoolYears = useMemo(() => ['All', ...schoolYearNames], [schoolYearNames]);
@@ -254,9 +256,9 @@ export const RosterPage: React.FC = () => {
 
   const studentData = useMemo(() => {
     if (!rawStudents) return [];
-    const projection = { mode: projectionMethod === 'today' ? 'today' as const : 'entry' as const, schoolYears: schoolYearsData };
+    const projection = { mode: projectionMethod === 'today' ? 'today' as const : 'entry' as const, schoolYears: schoolYearsData, summerSessions };
     return rawStudents.map(s => mapUniqueStudentToUI(s, holidaysUI, projection));
-  }, [rawStudents, holidaysUI, projectionMethod, schoolYearsData]);
+  }, [rawStudents, holidaysUI, projectionMethod, schoolYearsData, summerSessions]);
 
   const existingStudents = useMemo(() => studentData.map(uniqueStudentToStudent), [studentData]);
 

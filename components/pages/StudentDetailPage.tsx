@@ -6,6 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useStudentDetails, useUpdateStudent, useUpdateEnrollment, useCreateStudent } from '../../hooks/useStudents';
 import { StudentProgressReport } from '../reports/StudentProgressReport';
 import { useSchoolYears } from '../../hooks/useSchoolYears';
+import { useSummerSessions } from '../../hooks/useSummerSessions';
 import { useSettings } from '../../hooks/useSettings';
 import { useHolidays, useStudentAttendanceWithComments } from '../../hooks/useAttendance';
 import { Student, StudentStatus } from '../../types';
@@ -107,6 +108,7 @@ export const StudentDetailPage: React.FC = () => {
   const { settings } = useSettings();
   const { data: holidays = [] } = useHolidays();
   const { data: schoolYears = [] } = useSchoolYears();
+  const { data: summerSessions = [] } = useSummerSessions();
 
   const { mutate: updateProfile } = useUpdateStudent();
   const { mutate: updateEnrollment } = useUpdateEnrollment();
@@ -206,10 +208,12 @@ export const StudentDetailPage: React.FC = () => {
     return studentDetails.enrollments.map(enrollment =>
       mapEnrollmentToUI(enrollment, holidaysUIForMapper, {
         schoolYears,
+        summerSessions,
+        summerSessionIds: studentDetails.summerSessionIds,
         todayPresence: studentDetails.attendance.find(a => a.enrollment_id === enrollment.id && a.date === today)?.presence
       })
     );
-  }, [studentDetails, holidays, schoolYears]);
+  }, [studentDetails, holidays, schoolYears, summerSessions]);
 
   // Select the first enrollment by default if none selected
   useMemo(() => {
@@ -282,8 +286,9 @@ export const StudentDetailPage: React.FC = () => {
     daysAttended,
     creditDays,
     entryDate: displayEntryDate,
-    todayPresence: filteredAttendance.find(a => a.date === todayStr)?.presence
-  }, holidaysUI, { mode: projectionMethod === 'today' ? 'today' : 'entry', schoolYears });
+    todayPresence: filteredAttendance.find(a => a.date === todayStr)?.presence,
+    summerSessionIds: studentDetails?.summerSessionIds
+  }, holidaysUI, { mode: projectionMethod === 'today' ? 'today' : 'entry', schoolYears, summerSessions });
   const projectedReleaseDate = projectedReleaseDateISO !== 'N/A' && projectedReleaseDateISO !== 'Completed' ? formatDateForDisplay(projectedReleaseDateISO) : projectedReleaseDateISO;
 
   const handlePrint = () => {

@@ -7,6 +7,8 @@ interface AttendanceButtonProps {
     targetPresence: Presence;
     onClick: () => void;
     disabled?: boolean;
+    /** Tooltip while disabled; defaults to "no attendance is due". */
+    disabledReason?: string;
 }
 
 const getButtonConfig = (targetPresence: Presence, isSelected: boolean) => {
@@ -49,7 +51,7 @@ const getButtonConfig = (targetPresence: Presence, isSelected: boolean) => {
     }
 };
 
-export const AttendanceButton: React.FC<AttendanceButtonProps> = React.memo(({ currentPresence, targetPresence, onClick, disabled = false }) => {
+export const AttendanceButton: React.FC<AttendanceButtonProps> = React.memo(({ currentPresence, targetPresence, onClick, disabled = false, disabledReason }) => {
     const isSelected = currentPresence === targetPresence;
     const config = getButtonConfig(targetPresence, isSelected);
     const Icon = config.icon;
@@ -59,7 +61,7 @@ export const AttendanceButton: React.FC<AttendanceButtonProps> = React.memo(({ c
             onClick={onClick}
             disabled={disabled}
             aria-label={config.label}
-            title={disabled ? 'No attendance is due on this date' : config.label}
+            title={disabled ? (disabledReason ?? 'No attendance is due on this date') : config.label}
             className={`p-1 rounded-full transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed ${isSelected || disabled ? '' : 'hover:bg-slate-100 dark:hover:bg-slate-700'}`}
         >
             <Icon className={`h-6 w-6 transition-all ${isSelected ? config.selectedColor : `text-slate-300 dark:text-slate-500 ${config.hoverColor}`}`} />

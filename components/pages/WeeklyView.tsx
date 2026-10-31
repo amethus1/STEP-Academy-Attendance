@@ -3,14 +3,15 @@ import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { useStudents } from '../../hooks/useStudents';
-import { useAttendanceRange, useHolidays } from '../../hooks/useAttendance';
+import { useAttendanceRange } from '../../hooks/useAttendance';
+import { useSchoolCalendar } from '../../hooks/useSummerSessions';
 import { useActiveSchoolYear } from '../../hooks/useActiveSchoolYear';
-import { useSchoolYears } from '../../hooks/useSchoolYears';
 import { useSettings } from '../../hooks/useSettings';
 import { useAttendanceMarking } from '../../hooks/useAttendanceMarking';
 import { useKeyboardEntry } from '../../hooks/useKeyboardEntry';
 import { Presence, StudentStatus } from '../../types';
-import { mapDBStudentToUI, mapDBHolidaysToHolidays } from '../../services/mappers';
+import { mapDBStudentToUI } from '../../services/mappers';
+import { isInRegularTerm, isWeekend } from '../../services/schoolCalendar';
 import { toISODateString, formatDateForDisplay, getStartOfWeek, getWeekDays } from '../../services/dateUtils';
 import { getDayCompleteness, canRecordAttendance, isSchoolDay } from '../../services/attendanceCompleteness';
 
@@ -48,11 +49,10 @@ export const WeeklyView: React.FC = () => {
 
   // Derive school year - prefer manual selection, else auto-detect
   const schoolYear = useActiveSchoolYear(currentDate);
-  // School years let the projected release date skip breaks between them.
-  const { data: schoolYears = [] } = useSchoolYears();
 
   const { data: rawStudents, isLoading: studentsLoading } = useStudents(schoolYear);
-  const { data: holidays = [] } = useHolidays();
+  // Holidays, school years and summer sessions: when school is in session.
+  const { holidays, holidaysUI, calendar, projection } = useSchoolCalendar();
   const { mark, markMany } = useAttendanceMarking();
 
   const startOfWeek = useMemo(() => getStartOfWeek(new Date(currentDate + 'T12:00:00Z')), [currentDate]);
@@ -74,11 +74,10 @@ export const WeeklyView: React.FC = () => {
     return map;
   }, [attendanceRecords]);
 
-  const holidaysUI = useMemo(() => mapDBHolidaysToHolidays(holidays), [holidays]);
   const studentsInYear = useMemo(() => {
     if (!rawStudents) return [];
-    return rawStudents.map(s => mapDBStudentToUI(s, holidaysUI, { schoolYears }));
-  }, [rawStudents, holidaysUI, schoolYears]);
+    return rawStudents.map(s => mapDBStudentToUI(s, holidaysUI, projection));
+  }, [rawStudents, holidaysUI, projection]);
 
   // Use centralized filter hook
   const {
@@ -107,7 +106,7 @@ export const WeeklyView: React.FC = () => {
     });
   }, [statusFilter, gradeFilter, spedFilter, saveSettings]);
 
-  const holidaySet = useMemo(() => new Set(holidays.map(h => h.date)), [holidays]);
+  const holidaySet = calendar.holidayDates;
   const holidayNamesByDate = useMemo(() => Object.fromEntries(holidays.map(h => [h.date, h.name])), [holidays]);
   const isHoliday = useCallback((date: string) => holidaySet.has(date), [holidaySet]);
   const todayStr = toISODateString(new Date());
@@ -150,22 +149,23 @@ export const WeeklyView: React.FC = () => {
 
   const handleMarkAttendance = useCallback((studentId: string, date: string, currentPresence: Presence | undefined, targetPresence: Presence) => {
     const student = studentsInYear.find(s => s.id === studentId);
-    if (!student || !canRecordAttendance(student, date, todayStr, holidaySet)) return;
+    if (!student || !canRecordAttendance(student, date, todayStr, calendar)) return;
     mark(student, date, currentPresence, targetPresence);
-  }, [studentsInYear, todayStr, holidaySet, mark]);
+  }, [studentsInYear, todayStr, calendar, mark]);
 
   // --- Bulk marking, always for today ---
-  const todayIsSchoolDay = isSchoolDay(todayStr, holidaySet);
+  const todayIsSchoolDay = isSchoolDay(todayStr, calendar);
   const bulkDisabledReason = todayIsSchoolDay
     ? undefined
-    : `Today is ${holidayNamesByDate[todayStr] ? `a holiday (${holidayNamesByDate[todayStr]})` : 'not a school day'}, so no attendance is due. Use the Daily view to record a makeup session.`;
+    : `Today is ${holidayNamesByDate[todayStr] ? `a holiday (${holidayNamesByDate[todayStr]})`
+      : !isWeekend(todayStr) && !isInRegularTerm(todayStr, projection.schoolYears) ? 'summer break with no session running' : 'not a school day'}, so no attendance is due. Use the Daily view to record a makeup session.`;
 
   const handleBulkMark = useCallback((presence: Presence) => {
     if (!todayIsSchoolDay) return;
     const selected = studentsInYear.filter(s => selectedStudentIds.has(s.id));
     // Only students who can actually have attendance today: active, and
     // already started. The rest are left alone and reported.
-    const eligible = selected.filter(s => canRecordAttendance(s, todayStr, todayStr, holidaySet));
+    const eligible = selected.filter(s => canRecordAttendance(s, todayStr, todayStr, calendar));
     const ineligible = selected.length - eligible.length;
 
     if (eligible.length > 0) {
@@ -176,15 +176,15 @@ export const WeeklyView: React.FC = () => {
       toast.info(`${ineligible} selected ${ineligible === 1 ? 'student was' : 'students were'} not marked: not active, or not yet started on this date.`);
     }
     setSelectedStudentIds(new Set());
-  }, [todayIsSchoolDay, studentsInYear, selectedStudentIds, todayStr, holidaySet, markMany, attendanceByStudent]);
+  }, [todayIsSchoolDay, studentsInYear, selectedStudentIds, todayStr, calendar, markMany, attendanceByStudent]);
 
   // --- Completeness for each day of the week ---
   const dayStatus = useMemo(() => displayDates.map(date => {
     if (date > todayStr) return null; // nothing is due yet
     const marked = new Set(attendanceRecords.filter(r => r.date === date).map(r => r.student_id));
-    const result = getDayCompleteness(studentsInYear, date, marked, holidaySet, holidayNamesByDate);
+    const result = getDayCompleteness(studentsInYear, date, marked, calendar, holidayNamesByDate);
     return result.isSchoolDay && result.expected > 0 ? result : null;
-  }), [displayDates, todayStr, attendanceRecords, studentsInYear, holidaySet, holidayNamesByDate]);
+  }), [displayDates, todayStr, attendanceRecords, studentsInYear, calendar, holidayNamesByDate]);
 
   const unmarkedThisWeek = dayStatus.reduce((sum, d) => sum + (d?.unmarked ?? 0), 0);
   const incompleteDays = dayStatus.filter(d => d && d.unmarked > 0).length;
@@ -214,7 +214,7 @@ export const WeeklyView: React.FC = () => {
   const focusedStudent = keyboard.row === null ? undefined : keyboardRows[keyboard.row];
   const focusedDate = keyboard.col === null ? undefined : displayDates[keyboard.col];
   const focusedCellMarkable = !!(focusedStudent && focusedDate &&
-    canRecordAttendance(focusedStudent, focusedDate, todayStr, holidaySet));
+    canRecordAttendance(focusedStudent, focusedDate, todayStr, calendar));
 
   // Start on today's column when it is in view.
   const startKeyboard = () => {
@@ -394,7 +394,7 @@ export const WeeklyView: React.FC = () => {
                 fixedColumns={fixedColumns}
                 onMarkAttendance={handleMarkAttendance}
                 isHoliday={isHoliday}
-                holidayDates={holidaySet}
+                calendar={calendar}
                 todayStr={todayStr}
                 isSelected={selectedStudentIds.has(student.id)}
                 onToggleSelection={toggleSelection}

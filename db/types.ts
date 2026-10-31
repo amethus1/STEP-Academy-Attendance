@@ -67,6 +67,18 @@ export interface DBAppSetting {
     updated_at: string;
 }
 
+export interface DBSummerSession {
+    id: string;
+    name: string;
+    start_date: string;
+    end_date: string;
+}
+
+export interface DBSummerSessionStudent {
+    session_id: string;
+    student_id: string;
+}
+
 export interface DBSchoolYear {
     id: string;
     name: string;
@@ -82,6 +94,8 @@ export interface StudentWithEnrollment extends DBStudent, DBEnrollment {
     days_attended: number;
     /** Presence recorded for today on this enrollment, if any. */
     today_presence?: string | null;
+    /** Comma-separated ids of the summer sessions the student is on. */
+    summer_session_ids?: string | null;
 }
 
 export interface StudentSearchOptions {
@@ -128,6 +142,8 @@ export interface UniqueStudentRow {
     latest_days_attended: number;
     /** Presence recorded today on the latest enrollment, if any. */
     latest_today_presence?: string | null;
+    /** Comma-separated ids of the summer sessions the student is on. */
+    summer_session_ids?: string | null;
 }
 
 export interface UniqueStudentSearchOptions {

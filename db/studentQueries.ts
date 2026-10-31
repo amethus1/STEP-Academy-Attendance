@@ -117,7 +117,8 @@ export const searchStudents = async (options: StudentSearchOptions): Promise<Stu
           (SELECT COUNT(*) FROM attendance a WHERE a.enrollment_id = e.id AND a.presence IN ('Present', 'Tardy')) as days_attended,
           -- Whether today is already marked decides if today can still count
           -- toward the projected release date. 'localtime' matches the app's date.
-          (SELECT a.presence FROM attendance a WHERE a.enrollment_id = e.id AND a.date = date('now', 'localtime')) as today_presence
+          (SELECT a.presence FROM attendance a WHERE a.enrollment_id = e.id AND a.date = date('now', 'localtime')) as today_presence,
+          (SELECT group_concat(sss.session_id) FROM summer_session_students sss WHERE sss.student_id = s.id) as summer_session_ids
         FROM students s
         JOIN enrollments e ON s.id = e.student_id
         ${whereClause}
@@ -191,7 +192,8 @@ export const getUniqueStudents = async (options: UniqueStudentSearchOptions): Pr
             COALESCE(sa.enrollment_count, 0) as enrollment_count,
             COALESCE(sa.total_days_attended, 0) as total_days_attended,
             COALESCE(les.days_attended, 0) as latest_days_attended,
-            (SELECT a.presence FROM attendance a WHERE a.enrollment_id = re.id AND a.date = date('now', 'localtime')) as latest_today_presence
+            (SELECT a.presence FROM attendance a WHERE a.enrollment_id = re.id AND a.date = date('now', 'localtime')) as latest_today_presence,
+            (SELECT group_concat(sss.session_id) FROM summer_session_students sss WHERE sss.student_id = s.id) as summer_session_ids
         FROM students s
         INNER JOIN ranked_enrollments re ON s.id = re.student_id AND re.rn = 1
         LEFT JOIN student_aggregates sa ON s.id = sa.student_id
@@ -292,7 +294,12 @@ export const getStudentDetails = async (studentId: string) => {
 
     const attendance = await db.select<DBAttendance[]>("SELECT * FROM attendance WHERE student_id = $1", [studentId]);
 
-    return { student, enrollments, attendance };
+    const sessions = await db.select<{ session_id: string }[]>(
+        "SELECT session_id FROM summer_session_students WHERE student_id = $1", [studentId]
+    );
+    const summerSessionIds = sessions.map(s => s.session_id);
+
+    return { student, enrollments, attendance, summerSessionIds };
 };
 
 /**

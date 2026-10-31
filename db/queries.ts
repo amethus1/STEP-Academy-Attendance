@@ -28,5 +28,6 @@ export * from './schoolYearQueries';
 export * from './settingsQueries';
 export * from './auditQueries';
 export * from './dataTransferQueries';
+export * from './summerSessionQueries';
 export { ImportValidationError, describeImportFailure } from './atomicImport';
 export type { ImportProblem, ImportPayload } from './atomicImport';

@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useStudents } from '../../hooks/useStudents';
 import { useAttendanceRange, useHolidays } from '../../hooks/useAttendance';
+import { useSchoolCalendar } from '../../hooks/useSummerSessions';
 import { useSchoolYears } from '../../hooks/useSchoolYears';
 import { useSettings } from '../../hooks/useSettings';
 import { useReportingAnalytics } from '../../hooks/useReportingAnalytics';
@@ -35,12 +36,15 @@ export const ReportingPage: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'dashboard' | 'breakdowns' | 'atRisk'>('dashboard');
     const [atRiskConfig, setAtRiskConfig] = useState({ threshold: 5, days: 30 });
 
+    // School years and summer sessions decide which days count as possible.
+    const schoolCalendar = useSchoolCalendar();
     const analytics = useReportingAnalytics({
         students: rawStudents,
         attendance: attendanceRecords,
         holidays,
         dateRange: { start: thirtyDaysAgo, end: today },
-        thresholds: { atRisk: atRiskConfig.threshold, atRiskDays: atRiskConfig.days }
+        thresholds: { atRisk: atRiskConfig.threshold, atRiskDays: atRiskConfig.days },
+        schoolCalendar: schoolCalendar.projection
     });
 
     const loading = studentsLoading || attendanceLoading;

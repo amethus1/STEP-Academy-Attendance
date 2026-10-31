@@ -8,7 +8,7 @@ const rosterRow: UniqueStudentUI = {
     id: 'stu-1', studentNumber: 'S100', firstName: 'Grace', lastName: 'Hopper', photoUrl: null,
     dob: '2009-12-09', gender: 'Female', guardianName: 'Mary', guardianPhone: '555', guardianEmail: 'm@example.edu',
     emergencyContactName: 'Ann', emergencyContactPhone: '556', customFields: { homeroom: '12B' },
-    latestEnrollmentId: 'enr-1', currentGrade: '10', currentCampus: 'North', currentStatus: StudentStatus.Completed,
+    summerSessionIds: [], latestEnrollmentId: 'enr-1', currentGrade: '10', currentCampus: 'North', currentStatus: StudentStatus.Completed,
     entryDate: '2024-08-15', exitDate: '2024-11-01', daysAssigned: 45, creditDays: 2, daysAttended: 43,
     daysRemaining: 0, projectedReleaseDate: 'Completed', sped504: '504', drgOffense: 'X', comments: '',
     enrollmentCount: 1, totalDaysAttended: 43

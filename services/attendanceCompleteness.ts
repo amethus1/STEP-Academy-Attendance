@@ -1,4 +1,5 @@
 import { getDateRange, toISODateString } from './dateUtils';
+import { isSchoolDayFor, isSchoolDayForAnyone, type CalendarInput } from './schoolCalendar';
 
 /**
  * Answers "is this day finished, and did I skip one?"
@@ -14,7 +15,13 @@ export interface CompletenessStudent {
     status: string;
     entryDate: string;
     exitDate?: string;
+    /** Summer sessions the student is on; their days are school days for them. */
+    summerSessionIds?: string[];
 }
+
+/** The school calendar, or (simplest case) just the holiday dates. */
+export type CalendarLike = CalendarInput | Set<string>;
+const asCalendar = (c: CalendarLike): CalendarInput => (c instanceof Set ? { holidayDates: c } : c);
 
 export interface DayCompleteness {
     /** Active students enrolled on this date. */
@@ -23,7 +30,7 @@ export interface DayCompleteness {
     marked: number;
     /** expected - marked. */
     unmarked: number;
-    /** False on weekends and holidays, when no attendance is due. */
+    /** False on weekends, holidays and summer days with no session, when no attendance is due. */
     isSchoolDay: boolean;
     /** Set when the date falls on a named holiday. */
     holidayName?: string;
@@ -39,35 +46,43 @@ export const isWeekend = (isoDate: string): boolean => {
     return day === 0 || day === 6;
 };
 
-export const isSchoolDay = (isoDate: string, holidayDates: Set<string>): boolean =>
-    !isWeekend(isoDate) && !holidayDates.has(isoDate);
+/** A school day for anyone: regular term or a summer session. */
+export const isSchoolDay = (isoDate: string, calendar: CalendarLike): boolean =>
+    isSchoolDayForAnyone(isoDate, asCalendar(calendar));
 
-/** Students who should have attendance recorded on `isoDate`. */
+/**
+ * Students who should have attendance recorded on `isoDate`: active, started,
+ * not exited, and it is a school day for them (on a summer day, only students
+ * on a session covering it).
+ */
 export const studentsExpectedOn = <T extends CompletenessStudent>(
     roster: T[],
-    isoDate: string
+    isoDate: string,
+    calendar?: CalendarLike
 ): T[] =>
     roster.filter(s =>
         s.status === ACTIVE &&
         s.entryDate <= isoDate &&
-        !(s.exitDate && s.exitDate < isoDate)
+        !(s.exitDate && s.exitDate < isoDate) &&
+        (!calendar || isSchoolDayFor(isoDate, asCalendar(calendar), s.summerSessionIds))
     );
 
 export const getDayCompleteness = (
     roster: CompletenessStudent[],
     isoDate: string,
     markedStudentIds: Set<string>,
-    holidayDates: Set<string>,
+    calendar: CalendarLike,
     holidayNamesByDate: Record<string, string> = {}
 ): DayCompleteness => {
-    const expectedStudents = studentsExpectedOn(roster, isoDate);
+    const schoolDay = isSchoolDay(isoDate, calendar);
+    const expectedStudents = schoolDay ? studentsExpectedOn(roster, isoDate, calendar) : [];
     const marked = expectedStudents.filter(s => markedStudentIds.has(s.id)).length;
 
     return {
         expected: expectedStudents.length,
         marked,
         unmarked: expectedStudents.length - marked,
-        isSchoolDay: isSchoolDay(isoDate, holidayDates),
+        isSchoolDay: schoolDay,
         holidayName: holidayNamesByDate[isoDate]
     };
 };
@@ -82,7 +97,7 @@ export const getDayCompleteness = (
 export const findMissedSchoolDays = (
     roster: CompletenessStudent[],
     datesWithAttendance: Set<string>,
-    holidayDates: Set<string>,
+    calendar: CalendarLike,
     upTo: string,
     lookbackDays: number
 ): string[] => {
@@ -97,24 +112,25 @@ export const findMissedSchoolDays = (
     if (end < start) return [];
 
     return getDateRange(toISODateString(start), toISODateString(end)).filter(date =>
-        isSchoolDay(date, holidayDates) &&
+        isSchoolDay(date, calendar) &&
         !datesWithAttendance.has(date) &&
-        studentsExpectedOn(roster, date).length > 0
+        studentsExpectedOn(roster, date, calendar).length > 0
     );
 };
 
 /**
  * Whether a student's attendance can be recorded for `isoDate` from a grid
- * cell: an active student who had started by then, on a school day that is not
- * in the future.
+ * cell: an active student who had started by then, on a day that is a school
+ * day for them (summer days only through a session they are on), not in the
+ * future.
  */
 export const canRecordAttendance = (
     student: CompletenessStudent,
     isoDate: string,
     today: string,
-    holidayDates: Set<string>
+    calendar: CalendarLike
 ): boolean =>
     student.status === ACTIVE &&
     student.entryDate <= isoDate &&
     isoDate <= today &&
-    isSchoolDay(isoDate, holidayDates);
+    isSchoolDayFor(isoDate, asCalendar(calendar), student.summerSessionIds);

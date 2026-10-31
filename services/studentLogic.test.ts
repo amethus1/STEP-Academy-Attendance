@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateDaysRemaining, calculateProjectedReleaseDate, isInSession, projectReleaseDate } from './studentLogic';
+import { calculateDaysRemaining, calculateProjectedReleaseDate, projectReleaseDate } from './studentLogic';
 import { Holiday } from '../types';
 
 describe('studentLogic', () => {
@@ -76,23 +76,47 @@ describe('studentLogic', () => {
             });
         });
 
-        describe('school year breaks', () => {
+        describe('summer', () => {
+            // School runs 19 Aug 2024 - 30 May 2025 and 18 Aug 2025 - 29 May 2026.
             const schoolYears = [
                 { startDate: '2024-08-19', endDate: '2025-05-30' },
                 { startDate: '2025-08-18', endDate: '2026-05-29' }
             ];
 
-            it('skips the summer between two defined school years', () => {
+            it('pushes remaining days past summer into the next school year', () => {
                 // Thu 29 May 2025 + 3 school days: Fri 30 May, then Mon 18 and Tue 19 Aug.
                 expect(calculateProjectedReleaseDate(3, [], '2025-05-29', 'Active', { schoolYears })).toBe('2025-08-19');
             });
 
-            it('treats dates after the last defined year as school days', () => {
-                // Nothing defines 2026-2027 yet, so June 2026 counts as before.
-                expect(calculateProjectedReleaseDate(2, [], '2026-05-28', 'Active', { schoolYears })).toBe('2026-06-01');
+            it('repeats the last school year\'s calendar when the next year is not entered yet', () => {
+                // Fri 29 May 2026, then summer, then the repeated first day: Tue 18 Aug 2026.
+                expect(calculateProjectedReleaseDate(2, [], '2026-05-28', 'Active', { schoolYears })).toBe('2026-08-18');
             });
 
-            it('changes nothing for back-to-back years (the default definitions)', () => {
+            it('counts summer session days for a student on that session', () => {
+                const summerSessions = [{ id: 'sum1', startDate: '2025-06-09', endDate: '2025-06-27' }];
+                // 30 May, then Mon 9 and Tue 10 June in the session.
+                expect(calculateProjectedReleaseDate(3, [], '2025-05-29', 'Active', {
+                    schoolYears, summerSessions, studentSessionIds: ['sum1']
+                })).toBe('2025-06-10');
+            });
+
+            it('ignores a summer session the student is not on', () => {
+                const summerSessions = [{ id: 'sum1', startDate: '2025-06-09', endDate: '2025-06-27' }];
+                expect(calculateProjectedReleaseDate(3, [], '2025-05-29', 'Active', {
+                    schoolYears, summerSessions, studentSessionIds: []
+                })).toBe('2025-08-19');
+            });
+
+            it('resumes in the fall when the session ends before the days do', () => {
+                const summerSessions = [{ id: 'sum1', startDate: '2025-06-09', endDate: '2025-06-10' }];
+                // 30 May, 9 June, 10 June, then 18 Aug.
+                expect(calculateProjectedReleaseDate(4, [], '2025-05-29', 'Active', {
+                    schoolYears, summerSessions, studentSessionIds: ['sum1']
+                })).toBe('2025-08-18');
+            });
+
+            it('has no summer with back-to-back placeholder years (1 Aug - 31 Jul)', () => {
                 const backToBack = [
                     { startDate: '2024-08-01', endDate: '2025-07-31' },
                     { startDate: '2025-08-01', endDate: '2026-07-31' }
@@ -100,21 +124,6 @@ describe('studentLogic', () => {
                 expect(calculateProjectedReleaseDate(3, [], '2025-07-30', 'Active', { schoolYears: backToBack }))
                     .toBe(calculateProjectedReleaseDate(3, [], '2025-07-30', 'Active'));
             });
-        });
-    });
-
-    describe('isInSession', () => {
-        const years = [{ startDate: '2024-08-19', endDate: '2025-05-30' }, { startDate: '2025-08-18', endDate: '2026-05-29' }];
-        it('is in session within a year and outside the defined range', () => {
-            expect(isInSession('2024-09-01', years)).toBe(true);
-            expect(isInSession('2026-07-01', years)).toBe(true);
-            expect(isInSession('2024-01-01', years)).toBe(true);
-        });
-        it('is not in session between two years', () => {
-            expect(isInSession('2025-06-15', years)).toBe(false);
-        });
-        it('is always in session with no years defined', () => {
-            expect(isInSession('2025-06-15', [])).toBe(true);
         });
     });
 

@@ -2,8 +2,13 @@ import { StudentWithEnrollment, DBHoliday, UniqueStudentRow, DBEnrollment, DBStu
 import { Student, StudentStatus, Holiday } from '../types';
 import { calculateDaysRemaining, projectReleaseDate, type ProjectionContext } from './studentLogic';
 
+/** Split the comma-separated session ids a student query returns. */
+const sessionIdsOf = (raw?: string | null): string[] => (raw ? raw.split(',').filter(Boolean) : []);
+
 export interface ExtendedStudent extends Student {
     enrollmentId: string; // Enforce enrollmentId presence
+    /** Summer sessions the student is on. */
+    summerSessionIds: string[];
     daysAttended: number;
     daysRemaining: number;
     projectedReleaseDate: string;
@@ -25,12 +30,14 @@ export const mapDBStudentToUI = (data: StudentWithEnrollment, holidays: Holiday[
 
     const projectedReleaseDate = projectReleaseDate({
         status: data.status, daysAssigned, daysAttended, creditDays,
-        entryDate: data.start_date, todayPresence: data.today_presence
+        entryDate: data.start_date, todayPresence: data.today_presence,
+        summerSessionIds: sessionIdsOf(data.summer_session_ids)
     }, holidays, projection);
 
     return {
         id: data.studentId, // Note: DB query aliases 'id' as studentId for clarity in join
         enrollmentId: data.enrollmentId,
+        summerSessionIds: sessionIdsOf(data.summer_session_ids),
         studentNumber: data.student_number || data.studentId, // Fallback
         firstName: data.first_name,
         lastName: data.last_name,
@@ -120,6 +127,9 @@ export interface UniqueStudentUI {
     emergencyContactPhone: string;
     customFields: Record<string, string | number>;
 
+    /** Summer sessions the student is on. */
+    summerSessionIds: string[];
+
     // Latest enrollment info
     latestEnrollmentId: string;
     currentGrade: string;
@@ -163,7 +173,8 @@ export const mapUniqueStudentToUI = (
 
     const projectedReleaseDate = projectReleaseDate({
         status: row.latest_status, daysAssigned, daysAttended, creditDays,
-        entryDate: row.latest_start_date, todayPresence: row.latest_today_presence
+        entryDate: row.latest_start_date, todayPresence: row.latest_today_presence,
+        summerSessionIds: sessionIdsOf(row.summer_session_ids)
     }, holidays, projection);
 
     return {
@@ -181,6 +192,7 @@ export const mapUniqueStudentToUI = (
         emergencyContactPhone: row.emergency_contact_phone || '',
         customFields,
 
+        summerSessionIds: sessionIdsOf(row.summer_session_ids),
         latestEnrollmentId: row.latest_enrollment_id,
         currentGrade: row.latest_grade_level,
         currentCampus: row.latest_campus || '',
@@ -263,7 +275,7 @@ export interface EnrollmentUI {
 export const mapEnrollmentToUI = (
     enrollment: DBEnrollment & { days_attended: number },
     holidays: Holiday[],
-    projection: ProjectionContext & { todayPresence?: string | null } = {}
+    projection: ProjectionContext & { todayPresence?: string | null; summerSessionIds?: string[] } = {}
 ): EnrollmentUI => {
     const daysAttended = enrollment.days_attended || 0;
     const creditDays = enrollment.credit_days || 0;
@@ -272,7 +284,8 @@ export const mapEnrollmentToUI = (
 
     const projectedReleaseDate = projectReleaseDate({
         status: enrollment.status, daysAssigned, daysAttended, creditDays,
-        entryDate: enrollment.start_date, todayPresence: projection.todayPresence
+        entryDate: enrollment.start_date, todayPresence: projection.todayPresence,
+        summerSessionIds: projection.summerSessionIds
     }, holidays, projection);
 
     return {
