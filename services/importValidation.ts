@@ -17,6 +17,7 @@ export interface ValidationResult {
         attendanceCount: number;
         holidaysCount: number;
         schoolYearsCount: number;
+        summerSessionsCount: number;
     };
 }
 
@@ -80,6 +81,18 @@ const SchoolYearSchema = z.object({
     end_date: dateSchema
 });
 
+const SummerSessionSchema = z.object({
+    id: z.string().min(1),
+    name: z.string().min(1, "Summer session name is required"),
+    start_date: dateSchema,
+    end_date: dateSchema
+});
+
+const SummerSessionStudentSchema = z.object({
+    session_id: z.string().min(1),
+    student_id: z.string().min(1)
+});
+
 // Full Import Schema
 const ImportDataSchema = z.object({
     students: z.array(StudentSchema),
@@ -87,6 +100,8 @@ const ImportDataSchema = z.object({
     attendance: z.array(AttendanceSchema),
     holidays: z.array(HolidaySchema),
     schoolYears: z.array(SchoolYearSchema).optional(),
+    summerSessions: z.array(SummerSessionSchema).optional(),
+    summerSessionStudents: z.array(SummerSessionStudentSchema).optional(),
     settings: z.record(z.string(), z.any()).optional()
 });
 
@@ -95,8 +110,11 @@ const ImportDataSchema = z.object({
  * Returns detailed validation results with errors and warnings.
  */
 /** The fields the reference checks read; the file is otherwise untrusted. */
-interface RowIds { id?: string; student_id?: string; enrollment_id?: string }
-type ImportFileShape = Partial<Record<'students' | 'enrollments' | 'attendance' | 'holidays' | 'schoolYears', unknown>>;
+interface RowIds { id?: string; student_id?: string; enrollment_id?: string; session_id?: string }
+type ImportFileShape = Partial<Record<
+    'students' | 'enrollments' | 'attendance' | 'holidays' | 'schoolYears' | 'summerSessions' | 'summerSessionStudents',
+    unknown
+>>;
 const rowsOf = (value: unknown): RowIds[] => (Array.isArray(value) ? value : []) as RowIds[];
 
 export const validateImportData = (data: unknown): ValidationResult => {
@@ -133,7 +151,7 @@ export const validateImportData = (data: unknown): ValidationResult => {
                 valid: false,
                 errors,
                 warnings,
-                summary: { studentsCount: 0, enrollmentsCount: 0, attendanceCount: 0, holidaysCount: 0, schoolYearsCount: 0 }
+                summary: { studentsCount: 0, enrollmentsCount: 0, attendanceCount: 0, holidaysCount: 0, schoolYearsCount: 0, summerSessionsCount: 0 }
             };
         }
     }
@@ -148,6 +166,8 @@ export const validateImportData = (data: unknown): ValidationResult => {
     const attendance = rowsOf(file.attendance);
     const holidays = rowsOf(file.holidays);
     const schoolYears = rowsOf(file.schoolYears);
+    const summerSessions = rowsOf(file.summerSessions);
+    const summerSessionStudents = rowsOf(file.summerSessionStudents);
 
     // 2. Referential Integrity
     const studentIds = new Set<string>();
@@ -189,6 +209,16 @@ export const validateImportData = (data: unknown): ValidationResult => {
         }
     });
 
+    const sessionIds = new Set(summerSessions.map(s => s.id));
+    summerSessionStudents.forEach((m, i) => {
+        if (m.session_id && !sessionIds.has(m.session_id)) {
+            errors.push({ field: `summerSessionStudents.${i}.session_id`, message: `References missing summer session ID: ${m.session_id}` });
+        }
+        if (m.student_id && !studentIds.has(m.student_id)) {
+            errors.push({ field: `summerSessionStudents.${i}.student_id`, message: `References missing student ID: ${m.student_id}` });
+        }
+    });
+
     return {
         valid: errors.length === 0,
         errors,
@@ -198,7 +228,8 @@ export const validateImportData = (data: unknown): ValidationResult => {
             enrollmentsCount: enrollments.length,
             attendanceCount: attendance.length,
             holidaysCount: holidays.length,
-            schoolYearsCount: schoolYears.length
+            schoolYearsCount: schoolYears.length,
+            summerSessionsCount: summerSessions.length
         }
     };
 };

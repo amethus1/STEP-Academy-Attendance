@@ -17,7 +17,7 @@
 //               swap never leaves a half-empty database or a dangling
 //               transaction on a pooled connection.
 
-import type { DBStudent, DBEnrollment, DBAttendance, DBHoliday, DBSchoolYear } from './types';
+import type { DBStudent, DBEnrollment, DBAttendance, DBHoliday, DBSchoolYear, DBSummerSession, DBSummerSessionStudent } from './types';
 
 /** The query surface needed; the plugin's Database satisfies it structurally. */
 export interface SqlExecutor {
@@ -33,6 +33,12 @@ export interface ImportPayload {
     holidays?: DBHoliday[];
     /** Omitted by older export files; existing school years are then kept. */
     schoolYears?: DBSchoolYear[];
+    /**
+     * Omitted by files from before summer sessions existed; existing sessions
+     * are then kept, and students who are in the file stay on them.
+     */
+    summerSessions?: DBSummerSession[];
+    summerSessionStudents?: DBSummerSessionStudent[];
     settings?: Record<string, unknown>;
 }
 
@@ -76,7 +82,10 @@ export const describeImportFailure = (error: unknown): string => {
 // Kept under SQLite's historical 999-variable limit.
 const MAX_PARAMS_PER_STATEMENT = 900;
 
-const TABLES = ['students', 'enrollments', 'attendance', 'holidays', 'school_years', 'app_settings'] as const;
+const TABLES = [
+    'students', 'enrollments', 'attendance', 'holidays', 'school_years',
+    'summer_sessions', 'summer_session_students', 'app_settings'
+] as const;
 type Table = typeof TABLES[number];
 
 const staged = (table: Table) => `_import_${table}`;
@@ -97,6 +106,8 @@ const COLUMNS: Record<Table, string[]> = {
     attendance: ['id', 'student_id', 'enrollment_id', 'date', 'presence', 'comment'],
     holidays: ['date', 'name', 'school_year'],
     school_years: ['id', 'name', 'start_date', 'end_date'],
+    summer_sessions: ['id', 'name', 'start_date', 'end_date'],
+    summer_session_students: ['session_id', 'student_id'],
     app_settings: ['key', 'value', 'updated_at']
 };
 
@@ -123,6 +134,10 @@ const rowValues = (table: Table, payload: ImportPayload, now: string): unknown[]
             return (payload.holidays ?? []).map(h => [h.date, h.name, h.school_year ?? null]);
         case 'school_years':
             return (payload.schoolYears ?? []).map(y => [y.id, y.name, y.start_date, y.end_date]);
+        case 'summer_sessions':
+            return (payload.summerSessions ?? []).map(s => [s.id, s.name, s.start_date, s.end_date]);
+        case 'summer_session_students':
+            return (payload.summerSessionStudents ?? []).map(m => [m.session_id, m.student_id]);
         case 'app_settings':
             return Object.entries(payload.settings ?? {}).map(([key, value]) => [key, JSON.stringify(value), now]);
     }
@@ -208,7 +223,21 @@ const CHECKS: { message: string; sql: string }[] = [
     { message: 'Duplicate school year IDs or names',
       sql: `SELECT COUNT(*) AS n FROM (
               SELECT id FROM _import_school_years GROUP BY id HAVING COUNT(*) > 1
-              UNION ALL SELECT name FROM _import_school_years GROUP BY name HAVING COUNT(*) > 1)` }
+              UNION ALL SELECT name FROM _import_school_years GROUP BY name HAVING COUNT(*) > 1)` },
+    { message: 'Summer sessions missing required fields',
+      sql: `SELECT COUNT(*) AS n FROM _import_summer_sessions WHERE id IS NULL OR name IS NULL OR start_date IS NULL OR end_date IS NULL` },
+    { message: 'Summer sessions that end before they start',
+      sql: `SELECT COUNT(*) AS n FROM _import_summer_sessions WHERE end_date < start_date` },
+    { message: 'Duplicate summer session IDs or names',
+      sql: `SELECT COUNT(*) AS n FROM (
+              SELECT id FROM _import_summer_sessions GROUP BY id HAVING COUNT(*) > 1
+              UNION ALL SELECT name FROM _import_summer_sessions GROUP BY name HAVING COUNT(*) > 1)` },
+    { message: 'Summer session students for a session or student that is not in the file',
+      sql: `SELECT COUNT(*) AS n FROM _import_summer_session_students m
+              WHERE NOT EXISTS (SELECT 1 FROM _import_summer_sessions s WHERE s.id = m.session_id)
+                 OR NOT EXISTS (SELECT 1 FROM _import_students s WHERE s.id = m.student_id)` },
+    { message: 'A student listed twice on the same summer session',
+      sql: `SELECT COUNT(*) AS n FROM (SELECT 1 FROM _import_summer_session_students GROUP BY session_id, student_id HAVING COUNT(*) > 1)` }
 ];
 
 export const validateStaging = async (db: SqlExecutor): Promise<ImportProblem[]> => {
@@ -222,13 +251,19 @@ export const validateStaging = async (db: SqlExecutor): Promise<ImportProblem[]>
 };
 
 /**
- * The swap, as one script so it runs on a single connection. Holidays and
- * school years are only replaced when the file actually carries them; older
- * exports without them used to erase the existing ones.
+ * The swap, as one script so it runs on a single connection. Holidays, school
+ * years and summer sessions are only replaced when the file actually carries
+ * them; older exports without them used to erase the existing ones.
  */
-export const buildSwapSql = (opts: { replaceHolidays: boolean; replaceSchoolYears: boolean }) => {
+export const buildSwapSql = (opts: { replaceHolidays: boolean; replaceSchoolYears: boolean; replaceSummerSessions?: boolean }) => {
     const lines = [
         'BEGIN IMMEDIATE',
+        // Session memberships cascade away with the students below. When the
+        // file has no sessions, keep the existing ones for students it still has.
+        ...(opts.replaceSummerSessions ? [] : [
+            `INSERT INTO _import_summer_session_students SELECT * FROM summer_session_students
+                WHERE student_id IN (SELECT id FROM _import_students)`
+        ]),
         // References are checked once, by the guard below, after every table is
         // in place — rather than mid-way, where a violation would abort a single
         // statement and leave the transaction open.
@@ -238,6 +273,7 @@ export const buildSwapSql = (opts: { replaceHolidays: boolean; replaceSchoolYear
         'DELETE FROM students',
         ...(opts.replaceHolidays ? ['DELETE FROM holidays'] : []),
         ...(opts.replaceSchoolYears ? ['DELETE FROM school_years'] : []),
+        ...(opts.replaceSummerSessions ? ['DELETE FROM summer_sessions'] : []),
         // OR ROLLBACK: a duplicate or missing required value ends the whole
         // transaction instead of only the failing statement.
         'INSERT OR ROLLBACK INTO students SELECT * FROM _import_students',
@@ -245,6 +281,8 @@ export const buildSwapSql = (opts: { replaceHolidays: boolean; replaceSchoolYear
         'INSERT OR ROLLBACK INTO attendance SELECT * FROM _import_attendance',
         ...(opts.replaceHolidays ? ['INSERT OR ROLLBACK INTO holidays SELECT * FROM _import_holidays'] : []),
         ...(opts.replaceSchoolYears ? ['INSERT OR ROLLBACK INTO school_years SELECT * FROM _import_school_years'] : []),
+        ...(opts.replaceSummerSessions ? ['INSERT OR ROLLBACK INTO summer_sessions SELECT * FROM _import_summer_sessions'] : []),
+        'INSERT OR ROLLBACK INTO summer_session_students SELECT * FROM _import_summer_session_students',
         'INSERT OR REPLACE INTO app_settings SELECT * FROM _import_app_settings',
         `INSERT INTO ${GUARD_TABLE} VALUES (1)`,
         'COMMIT'
@@ -274,7 +312,8 @@ export const runAtomicImport = async (
         try {
             await db.execute(buildSwapSql({
                 replaceHolidays: Array.isArray(payload.holidays),
-                replaceSchoolYears: Array.isArray(payload.schoolYears) && payload.schoolYears.length > 0
+                replaceSchoolYears: Array.isArray(payload.schoolYears) && payload.schoolYears.length > 0,
+                replaceSummerSessions: Array.isArray(payload.summerSessions)
             }));
         } catch (error) {
             // Every anticipated failure has already rolled itself back. For

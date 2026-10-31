@@ -103,4 +103,22 @@ describe('importValidation', () => {
         const result = validateImportData(validData);
         expect(result.valid).toBe(true);
     });
+
+    it('accepts summer sessions and checks their students', () => {
+        const session = { id: 's1', name: 'Summer 1', start_date: '2024-06-10', end_date: '2024-06-28' };
+        const ok = validateImportData({
+            ...validData,
+            summerSessions: [session],
+            summerSessionStudents: [{ session_id: 's1', student_id: validStudent.id }]
+        });
+        expect(ok.valid).toBe(true);
+        expect(ok.summary.summerSessionsCount).toBe(1);
+
+        const bad = validateImportData({
+            ...validData,
+            summerSessions: [session],
+            summerSessionStudents: [{ session_id: 'missing', student_id: validStudent.id }]
+        });
+        expect(bad.errors.some(e => e.message.includes('missing summer session ID'))).toBe(true);
+    });
 });

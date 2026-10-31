@@ -140,6 +140,66 @@ describe('runAtomicImport', () => {
         expect(db.prepare('SELECT name FROM holidays').get()).toEqual({ name: 'Thanksgiving' });
     });
 
+    it('replaces summer sessions and their students when the file has them', async () => {
+        const db = await freshDb();
+        db.exec(`INSERT INTO summer_sessions VALUES ('olds','Old Session','2025-06-09','2025-06-27');
+                 INSERT INTO summer_session_students VALUES ('olds','old1');`);
+
+        await runAtomicImport(adapter(db), {
+            ...validPayload(),
+            summerSessions: [{ id: 's1', name: 'Summer 1', start_date: '2026-06-08', end_date: '2026-06-26' }],
+            summerSessionStudents: [{ session_id: 's1', student_id: 'n2' }]
+        });
+
+        expect(db.prepare('SELECT id FROM summer_sessions').all()).toEqual([{ id: 's1' }]);
+        expect(db.prepare('SELECT session_id, student_id FROM summer_session_students').all())
+            .toEqual([{ session_id: 's1', student_id: 'n2' }]);
+    });
+
+    it('keeps summer sessions, and the students still in the file, when an older file omits them', async () => {
+        const db = await freshDb();
+        db.exec(`INSERT INTO summer_sessions VALUES ('s1','Summer 1','2025-06-09','2025-06-27');
+                 INSERT INTO summer_session_students VALUES ('s1','old1'),('s1','old2');`);
+        // A restore of the same students, minus old2, from before sessions existed.
+        const payload: ImportPayload = {
+            students: [student('old1')],
+            enrollments: [enrollment('e1', 'old1')],
+            attendance: []
+        };
+
+        await runAtomicImport(adapter(db), payload);
+
+        expect(count(db, 'summer_sessions')).toBe(1);
+        expect(db.prepare('SELECT student_id FROM summer_session_students').all()).toEqual([{ student_id: 'old1' }]);
+    });
+
+    it('rejects session students for a session or student not in the file', async () => {
+        const db = await freshDb();
+        const before = snapshot(db);
+
+        const error = await runAtomicImport(adapter(db), {
+            ...validPayload(),
+            summerSessions: [{ id: 's1', name: 'Summer 1', start_date: '2026-06-08', end_date: '2026-06-26' }],
+            summerSessionStudents: [{ session_id: 's1', student_id: 'ghost' }, { session_id: 'nope', student_id: 'n1' }]
+        }).catch(e => e);
+
+        expect((error as ImportValidationError).problems).toContainEqual({
+            message: 'Summer session students for a session or student that is not in the file', count: 2
+        });
+        expect(snapshot(db)).toEqual(before);
+    });
+
+    it('rejects a summer session that ends before it starts', async () => {
+        const db = await freshDb();
+        const error = await runAtomicImport(adapter(db), {
+            ...validPayload(),
+            summerSessions: [{ id: 's1', name: 'Backwards', start_date: '2026-06-26', end_date: '2026-06-08' }]
+        }).catch(e => e);
+
+        expect((error as ImportValidationError).problems.map(p => p.message))
+            .toContain('Summer sessions that end before they start');
+    });
+
     it('stages and swaps large files across several batches', async () => {
         const db = await freshDb();
         const payload = validPayload();

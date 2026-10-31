@@ -1,6 +1,6 @@
 import { AppSettings, AutoBackupFrequency } from '../types';
 import { getExportData, describeImportFailure } from '../db/queries';
-import type { DBStudent, DBEnrollment, DBAttendance, DBHoliday, DBSchoolYear } from '../db/types';
+import type { DBStudent, DBEnrollment, DBAttendance, DBHoliday, DBSchoolYear, DBSummerSession, DBSummerSessionStudent } from '../db/types';
 import type { ImportPayload } from '../db/atomicImport';
 import type { LegacyImportData, LegacyStudent, LegacyAttendance, LegacyHoliday } from './legacyImportService';
 import { queryClient } from '../lib/react-query';
@@ -313,6 +313,8 @@ export const performRestore = async (filePath: string): Promise<{ success: boole
         const attendance = pick('attendance', 'Attendance') ?? [];
         const holidays = pick('holidays', 'Holidays');
         const schoolYears = pick('schoolYears', 'SchoolYears');
+        const summerSessions = pick('summerSessions', 'SummerSessions');
+        const summerSessionStudents = pick('summerSessionStudents', 'SummerSessionStudents');
 
         if (students.length === 0) {
             throw new Error("Invalid backup file format: Missing required data");
@@ -330,6 +332,8 @@ export const performRestore = async (filePath: string): Promise<{ success: boole
                 attendance: attendance as DBAttendance[],
                 holidays: holidays as DBHoliday[] | undefined,
                 schoolYears: schoolYears as DBSchoolYear[] | undefined,
+                summerSessions: summerSessions as DBSummerSession[] | undefined,
+                summerSessionStudents: summerSessionStudents as DBSummerSessionStudent[] | undefined,
                 settings: (raw.settings as Record<string, unknown> | undefined) ?? {}
             }
             : convertLegacyBackup({

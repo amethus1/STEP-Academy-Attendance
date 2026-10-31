@@ -7,7 +7,7 @@ import {
     DBEnrollment,
     DBAttendance,
     DBHoliday,
-    DBSchoolYear
+    DBSchoolYear, DBSummerSession, DBSummerSessionStudent
 } from './types';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -21,6 +21,8 @@ export const getExportData = async () => {
     const attendance = await db.select<DBAttendance[]>("SELECT * FROM attendance");
     const holidays = await db.select<DBHoliday[]>("SELECT * FROM holidays");
     const schoolYears = await db.select<DBSchoolYear[]>("SELECT * FROM school_years");
+    const summerSessions = await db.select<DBSummerSession[]>("SELECT * FROM summer_sessions");
+    const summerSessionStudents = await db.select<DBSummerSessionStudent[]>("SELECT * FROM summer_session_students");
 
     // Get settings (v3+)
     const settingsRows = await db.select<{ key: string; value: string }[]>("SELECT key, value FROM app_settings");
@@ -35,7 +37,7 @@ export const getExportData = async () => {
 
     await createAuditLog('Export Data', 'System', null, `Exported ${students.length} students, ${enrollments.length} enrollments`);
 
-    return { students, enrollments, attendance, holidays, schoolYears, settings };
+    return { students, enrollments, attendance, holidays, schoolYears, summerSessions, summerSessionStudents, settings };
 };
 
 /**
