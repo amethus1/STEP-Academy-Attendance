@@ -94,6 +94,7 @@ const App: React.FC = () => {
       case '/audit': return 'Audit Log';
       case '/data': return 'Data Management';
       case '/settings': return 'Settings';
+      case '/settings/school-years': return 'School Years';
       case '/help': return 'Help & About';
       default:
         if (location.pathname.startsWith('/student/')) return 'Student Detail';

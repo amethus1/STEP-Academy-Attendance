@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { useSchoolYears, useCreateSchoolYear, useUpdateSchoolYear, useDeleteSchoolYear } from '../../hooks/useSchoolYears';
 import { SchoolYear } from '../../types';
 import { TrashIcon, PencilIcon } from '../icons/Icons';
-import { formatDateForDisplay } from '../../services/dateUtils';
+import { formatDateForDisplay, toISODateString } from '../../services/dateUtils';
 import { placeholderYears } from '../../services/schoolCalendar';
 import { SummerSessionsSection } from './SummerSessionsSection';
 
@@ -85,7 +85,14 @@ export const SchoolYearsPage: React.FC = () => {
         }
     };
 
-    const placeholders = placeholderYears(schoolYears);
+    // Only years that shape upcoming release dates: current or future ones, and
+    // the latest year, whose dates are repeated for years not yet entered.
+    const todayISO = toISODateString(new Date());
+    const latestYear = schoolYears.reduce<SchoolYear | null>((latest, y) => (!latest || y.startDate > latest.startDate ? y : latest), null);
+    const placeholders = placeholderYears(schoolYears).filter(y => y.endDate >= todayISO || y === latestYear);
+    // A year after the latest first day of school, the next year should have started.
+    const nextYearDue = latestYear && `${Number(latestYear.startDate.slice(0, 4)) + 1}${latestYear.startDate.slice(4)}`;
+    const missingCurrentYear = !!nextYearDue && todayISO >= nextYearDue;
 
     if (isLoading) return <div className="p-8 text-center bg-slate-50 dark:bg-slate-900 rounded-lg">Loading school years...</div>;
 
@@ -115,6 +122,13 @@ export const SchoolYearsPage: React.FC = () => {
                 Enter each year&apos;s first and last day of school. Weekdays between the last day and the next year&apos;s first day are
                 summer break: they don&apos;t count toward placements, so release dates move into the next school year.
             </p>
+
+            {missingCurrentYear && (
+                <div role="alert" className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700 p-4 text-sm text-amber-800 dark:text-amber-200">
+                    The current school year hasn&apos;t been added. Until it is, release dates repeat the last year&apos;s dates. Use
+                    <strong> + Current Year</strong> and enter the real first and last day of school.
+                </div>
+            )}
 
             {placeholders.length > 0 && (
                 <div role="alert" className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700 p-4 text-sm text-amber-800 dark:text-amber-200">
